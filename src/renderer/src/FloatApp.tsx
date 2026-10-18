@@ -10,6 +10,7 @@ import type { AppState, FloatSize, Offer, VoiceStatus } from '@shared/ipc'
 import { TaskCard } from './components/TaskCard'
 import { usePaiEvent } from './hooks'
 import { isActiveTask, useTasks } from './tasks'
+import { chime } from './audio'
 
 const CLICK_SLOP_PX = 4
 const VOICE_LABEL: Record<VoiceStatus['state'], string> = {
@@ -25,6 +26,8 @@ export function FloatApp() {
   const [offer, setOffer] = useState<Offer | null>(null)
   const [voice, setVoice] = useState<VoiceStatus>({ state: 'idle' })
   const [panel, setPanel] = useState(false)
+  // Reminders that went off and haven't been dismissed yet (oldest first).
+  const [reminders, setReminders] = useState<{ id: string; message: string }[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const tasks = useTasks()
@@ -39,6 +42,10 @@ export function FloatApp() {
   usePaiEvent('state:changed', setState)
   usePaiEvent('offer:show', setOffer)
   usePaiEvent('offer:clear', ({ id }) => setOffer((o) => (o?.id === id ? null : o)))
+  usePaiEvent('reminder:fired', (r) => {
+    chime('start')
+    setReminders((list) => [...list.filter((x) => x.id !== r.id), r])
+  })
   usePaiEvent('voice:status', (s) => {
     clearTimeout(hideTimer.current)
     setVoice(s)
@@ -47,7 +54,13 @@ export function FloatApp() {
   })
 
   const voiceCard = voice.state !== 'idle' || !!voice.caption
-  const size: FloatSize = panel ? 'panel' : offer || voiceCard ? 'card' : 'orb'
+  const reminder = reminders[0]
+  const size: FloatSize = panel ? 'panel' : reminder || offer || voiceCard ? 'card' : 'orb'
+  const closeReminder = (snooze: boolean) => {
+    if (!reminder) return
+    if (snooze) void window.pai.snoozeReminder(reminder.message)
+    setReminders((list) => list.slice(1))
+  }
   useEffect(() => {
     void window.pai.setFloatExpanded(size)
   }, [size])
@@ -150,6 +163,21 @@ export function FloatApp() {
     </div>
   )
 
+  const reminderView = reminder && (
+    <div className="reminder-card" role="alert">
+      <div className="reminder-kicker">⏰ Reminder{reminders.length > 1 ? ` · ${reminders.length}` : ''}</div>
+      <p className="reminder-text">{reminder.message}</p>
+      <div className="offer-actions">
+        <button className="btn-primary btn-inline btn-sm" onClick={() => closeReminder(false)}>
+          Done
+        </button>
+        <button className="btn-ghost btn-sm" onClick={() => closeReminder(true)}>
+          Snooze 10 min
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <div className={`float-root ${panel ? 'float-root-panel' : ''}`}>
       {panel ? (
@@ -163,6 +191,7 @@ export function FloatApp() {
               ×
             </button>
           </header>
+          {reminderView}
           {voiceView}
           {!voiceCard && offerView}
           <form
@@ -194,7 +223,9 @@ export function FloatApp() {
           </div>
         </section>
       ) : (
-        (voiceCard || offer) && <div className="offer glass">{voiceCard ? voiceView : offerView}</div>
+        (reminder || voiceCard || offer) && (
+          <div className={`offer glass ${reminder ? 'offer-reminder' : ''}`}>{reminder ? reminderView : voiceCard ? voiceView : offerView}</div>
+        )
       )}
       <button
         className={`float-orb ${state.enabled ? '' : 'float-off'} ${state.quietMode ? 'float-quiet' : ''} ${offer || needsYou ? 'float-alert' : ''} float-${voice.state} ${active.length ? 'float-working' : ''}`}

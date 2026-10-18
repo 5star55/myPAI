@@ -24,6 +24,7 @@ import { deleteConversation, getConversation, listConversations, renameConversat
 import { profileStore, sanitizeProfile } from './store/profile'
 import { deleteReminder, listReminders } from './store/reminders'
 import { stateStore } from './store/state'
+import { notify, scheduleNextReminder, snoozeReminder } from './reminders/scheduler'
 import { ensureChatWindow, getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { broadcast } from './windows/common'
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
@@ -151,7 +152,13 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
 
   // Reminders
   handle(IPC.remindersList, 'chat', () => ok(listReminders()))
-  handle(IPC.remindersDelete, 'chat', (id) => ok(deleteReminder(id)))
+  handle(IPC.remindersDelete, 'chat', (id) => {
+    deleteReminder(id)
+    scheduleNextReminder()
+    return ok(undefined)
+  })
+  handle(IPC.reminderSnooze, 'any', (message) => ok(snoozeReminder(message)))
+  handle(IPC.testNotification, 'chat', () => ok(notify(`${profileStore.get().assistantName} test`, 'If you can see this, reminders will reach you as notifications too.')))
 
   // Skills
   handle(IPC.skillsList, 'chat', () => ok(listSkills(profileStore.get())))

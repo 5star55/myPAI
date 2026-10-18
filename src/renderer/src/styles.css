@@ -3254,6 +3254,41 @@ input[type='range'] {
   animation-duration: 1.6s;
 }
 
+/* ---------- reminder card on the orb ---------- */
+.offer-reminder {
+  border-color: rgba(255, 200, 87, 0.65);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(255, 200, 87, 0.25);
+}
+
+.reminder-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mini-eco .reminder-card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 200, 87, 0.5);
+  background: rgba(255, 200, 87, 0.06);
+}
+
+.reminder-kicker {
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.reminder-text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 /* ---------- mini orb: the "working" spinner ---------- */
 .mini-orb {
   position: relative;

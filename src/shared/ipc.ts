@@ -411,6 +411,8 @@ export const IPC = {
   memoryDelete: 'memory:delete',
   remindersList: 'reminders:list',
   remindersDelete: 'reminders:delete',
+  reminderSnooze: 'reminders:snooze',
+  testNotification: 'reminders:test-notification',
   skillsList: 'skills:list',
   skillsReload: 'skills:reload',
   skillsPick: 'skills:pick-files',
@@ -473,6 +475,8 @@ export interface EventMap {
   'task:removed': { id: string }
   /** Main asks the main window to show a screen. */
   'ui:navigate': { tab: 'ecospace' | 'chat' }
+  /** A reminder is due (the orb shows a card; the main window reads it aloud). */
+  'reminder:fired': { id: string; message: string }
 }
 export type EventName = keyof EventMap
 export const EVENT_NAMES: EventName[] = [
@@ -489,7 +493,8 @@ export const EVENT_NAMES: EventName[] = [
   'voice:review',
   'task:update',
   'task:removed',
-  'ui:navigate'
+  'ui:navigate',
+  'reminder:fired'
 ]
 
 /** The API the preload script exposes on window.pai. */
@@ -521,6 +526,10 @@ export interface PaiApi {
 
   listReminders(): Promise<Result<Reminder[]>>
   deleteReminder(id: string): Promise<Result<void>>
+  /** Remind again in 10 minutes. */
+  snoozeReminder(message: string): Promise<Result<void>>
+  /** Send a test notification (false = this system doesn't support notifications). */
+  testNotification(): Promise<Result<boolean>>
 
   listSkills(): Promise<Result<SkillInfo[]>>
   reloadSkills(): Promise<Result<SkillInfo[]>>

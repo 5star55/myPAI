@@ -34,6 +34,8 @@ const api: PaiApi = {
 
   listReminders: () => call(IPC.remindersList),
   deleteReminder: (id) => call(IPC.remindersDelete, id),
+  snoozeReminder: (message) => call(IPC.reminderSnooze, message),
+  testNotification: () => call(IPC.testNotification),
 
   listSkills: () => call(IPC.skillsList),
   reloadSkills: () => call(IPC.skillsReload),

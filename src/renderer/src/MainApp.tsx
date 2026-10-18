@@ -9,7 +9,7 @@ import { PermissionDialog } from './components/PermissionDialog'
 import { PowerSwitch } from './components/PowerSwitch'
 import { useData, usePaiEvent } from './hooks'
 import { handsFree } from './voice/handsFree'
-import { setVoiceChoice } from './audio'
+import { setVoiceChoice, speak } from './audio'
 import { ActivityView } from './views/ActivityView'
 import { MemoryView } from './views/MemoryView'
 import { RemindersView } from './views/RemindersView'
@@ -44,6 +44,10 @@ export function MainApp() {
   }, [])
   usePaiEvent('state:changed', setState)
   usePaiEvent('ui:navigate', ({ tab: t }) => setTab(t))
+  // Reminders are also read aloud (not in quiet mode, and not over a voice conversation).
+  usePaiEvent('reminder:fired', ({ message }) => {
+    if (!state?.quietMode && !handsFree.active) speak(`Reminder: ${message}`)
+  })
 
   // Talking to pai (hotkey, "Hey <name>", the mic in the Ecospace or on the orb) runs a task.
   useEffect(() => {

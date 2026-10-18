@@ -128,6 +128,7 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
                 </p>
               </Card>
             )}
+            <NotificationsCard name={name} />
             <Card title="Start over">
               <Row label="Re-run “Generate your AI”" help="Walk through setup again. Memory, chats and logs are kept.">
                 <button
@@ -273,6 +274,41 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
         </div>
       )}
     </section>
+  )
+}
+
+function NotificationsCard({ name }: { name: string }) {
+  const [result, setResult] = useState<string | null>(null)
+  return (
+    <Card title="Reminders & notifications">
+      <Row
+        label="Test notification"
+        help={`Reminders always appear on ${name}'s floating orb with a chime and are read aloud. They are also sent as system notifications.`}
+      >
+        <button
+          className="btn-ghost"
+          onClick={async () => {
+            const r = await window.pai.testNotification()
+            setResult(r.ok && r.value ? 'sent' : 'unsupported')
+          }}
+        >
+          Send test
+        </button>
+      </Row>
+      {result === 'sent' && (
+        <p className="card-foot">
+          Sent. Didn't see it? {isMac ? (
+            <>
+              Open <b>System Settings → Notifications</b>, find <b>Electron</b> (that's {name} while running from source), turn on{' '}
+              <b>Allow notifications</b> and choose <b>Alerts</b>. Also check that a Focus mode isn't on.
+            </>
+          ) : (
+            <>Check your system's notification settings and Do Not Disturb.</>
+          )}
+        </p>
+      )}
+      {result === 'unsupported' && <p className="card-foot">This system doesn't support notifications; reminders will still show on the orb.</p>}
+    </Card>
   )
 }
 
