@@ -11,10 +11,13 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
     "dotenv": "^18.0.8",
+    "get-windows": "^9.3.0",
     "openai": "^7.38.0"
   },
   "devDependencies": {
@@ -27,6 +30,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
   }
 }

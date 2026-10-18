@@ -27,7 +27,7 @@ export interface AppConfig {
 const DEFAULTS = {
   baseURL: 'http://localhost:11434/v1',
   apiKey: 'ollama', // Ollama ignores the key, but the openai package requires one.
-  model: 'llama3.2',
+  model: 'llama3.1:8b',
   smallMaxTokens: 512,
   bigMaxTokens: 1024
 }
@@ -92,6 +92,7 @@ export function getPublicConfig(): PublicConfig {
     smallModel: c.smallModel,
     bigModel: c.bigModel,
     hasApiKey: c.apiKey.length > 0,
+    webSearchConfigured: c.tavilyApiKey.length > 0,
     warnings: c.warnings
   }
 }

@@ -1,0 +1,109 @@
+/**
+ * MainApp — the main window: first-run setup, then the app shell with
+ * sidebar navigation, the power switch, and the permission dialog.
+ */
+import { useEffect, useState } from 'react'
+import type { AppState, Profile, PublicConfig } from '@shared/ipc'
+import { Chat } from './components/Chat'
+import { PermissionDialog } from './components/PermissionDialog'
+import { PowerSwitch } from './components/PowerSwitch'
+import { useData, usePaiEvent } from './hooks'
+import { ActivityView } from './views/ActivityView'
+import { MemoryView } from './views/MemoryView'
+import { RemindersView } from './views/RemindersView'
+import { SettingsView } from './views/SettingsView'
+import { Setup } from './views/Setup'
+import { SkillsView } from './views/SkillsView'
+
+const TABS = [
+  { id: 'chat', label: 'Chat', icon: 'M4 5h16v11H8l-4 4z' },
+  { id: 'activity', label: 'Activity', icon: 'M3 12h4l3-8 4 16 3-8h4' },
+  { id: 'memory', label: 'Memory', icon: 'M12 3a6 6 0 0 0-6 6c0 2.5 1.5 3.5 2 5v3h8v-3c.5-1.5 2-2.5 2-5a6 6 0 0 0-6-6zM9 21h6' },
+  { id: 'reminders', label: 'Reminders', icon: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z' },
+  { id: 'skills', label: 'Skills', icon: 'M12 2l2.6 6.6L21 9l-5 4.4L17.5 21 12 17l-5.5 4L8 13.4 3 9l6.4-.4z' },
+  { id: 'settings', label: 'Settings', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2-1-1-3-2 .3-1.5-1.5L17 5l-3-1-1 2h-2L10 4 7 5l.5 2.3L6 8.7 4 8.4l-1 3 2 1v2l-2 1 1 3 2-.3 1.5 1.5L7 21l3 1 1-2h2l1 2 3-1-.5-2.3 1.5-1.5 2 .3 1-3-2-1z' }
+] as const
+type Tab = (typeof TABS)[number]['id']
+
+export function MainApp() {
+  const [tab, setTab] = useState<Tab>('chat')
+  const [state, setState] = useState<AppState | null>(null)
+  const [config, setConfig] = useState<PublicConfig | null>(null)
+  const profile = useData<Profile>(() => window.pai.getProfile(), 'profile')
+
+  useEffect(() => {
+    window.pai.getConfig().then((r) => r.ok && setConfig(r.value))
+    window.pai.getState().then((r) => r.ok && setState(r.value))
+  }, [])
+  usePaiEvent('state:changed', setState)
+
+  if (!profile.data || !state) return <div className="shell" />
+
+  if (!profile.data.setupComplete) {
+    return (
+      <div className="shell">
+        <div className="grid-bg" aria-hidden />
+        <Setup initial={profile.data} onDone={(p) => profile.setData(p)} />
+      </div>
+    )
+  }
+
+  const name = profile.data.assistantName
+  return (
+    <div className={`shell ${state.enabled ? '' : 'is-off'}`}>
+      <div className="grid-bg" aria-hidden />
+      <header className="topbar">
+        <span className="brand">
+          {name}
+          <span className="brand-dot" />
+        </span>
+        <span className="topbar-right">
+          {config && <span className="model-tag">{config.mode === 'mock' ? 'mock' : config.smallModel}</span>}
+          {config && <span className={`chip chip-${config.mode}`}>{config.mode === 'mock' ? 'MOCK' : 'LIVE'}</span>}
+          {state.quietMode && <span className="chip chip-quiet">QUIET</span>}
+          <PowerSwitch on={state.enabled} />
+        </span>
+      </header>
+
+      {config?.warnings.map((w) => (
+        <p key={w} className="warning banner">
+          ⚠ {w}
+        </p>
+      ))}
+      {!state.enabled && (
+        <p className="off-banner banner" role="status">
+          {name} is OFF. No tools, no model calls, no offers. Use the power switch to turn it back on.
+        </p>
+      )}
+
+      <div className="body">
+        <nav className="sidebar" aria-label="Sections">
+          {TABS.map((t) => (
+            <button key={t.id} className={`nav-btn ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)} title={t.label}>
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+                <path d={t.icon} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" />
+              </svg>
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="content">
+          {/* Chat stays mounted so the conversation survives tab switches. */}
+          <div className="tab-pane" hidden={tab !== 'chat'}>
+            <Chat assistantName={name} enabled={state.enabled} />
+          </div>
+          {tab === 'activity' && <ActivityView />}
+          {tab === 'memory' && <MemoryView />}
+          {tab === 'reminders' && <RemindersView />}
+          {tab === 'skills' && <SkillsView profile={profile.data} onSaved={(p) => profile.setData(p)} />}
+          {tab === 'settings' && (
+            <SettingsView profile={profile.data} state={state} config={config} onSaved={(p) => profile.setData(p)} />
+          )}
+        </div>
+      </div>
+
+      <PermissionDialog />
+    </div>
+  )
+}

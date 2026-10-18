@@ -15,12 +15,14 @@ import OpenAI, {
   APIConnectionError,
   APIConnectionTimeoutError,
   APIError,
+  APIUserAbortError,
   AuthenticationError,
   NotFoundError,
   RateLimitError
 } from 'openai'
 import type { Result } from '@shared/ipc'
 import { getConfig } from './config'
+import { mockReply } from './mock'
 
 export type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 export type ToolSpec = OpenAI.Chat.ChatCompletionFunctionTool
@@ -42,6 +44,10 @@ export interface CompleteRequest {
   messages: ChatMessage[]
   size: 'small' | 'big'
   tools?: ToolSpec[]
+  /** Aborts the request (used by the off switch and the Stop button). */
+  signal?: AbortSignal
+  /** If given, the reply is streamed and each new piece of text is passed here. */
+  onText?: (delta: string) => void
 }
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -65,15 +71,38 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
   const model = req.size === 'big' ? c.bigModel : c.smallModel
   const maxTokens = req.size === 'big' ? c.bigMaxTokens : c.smallMaxTokens
 
-  if (c.mode === 'mock') return { ok: true, value: mockReply(req) }
+  if (c.mode === 'mock') {
+    await new Promise((r) => setTimeout(r, 350)) // feel a little like a real model
+    if (req.signal?.aborted) return { ok: false, error: 'Stopped.' }
+    const reply = mockReply(req.messages, req.tools ?? [])
+    if (req.onText && reply.text) {
+      // Fake streaming: a few words at a time.
+      for (const piece of reply.text.match(/\S+\s*/g) ?? []) {
+        if (req.signal?.aborted) return { ok: false, error: 'Stopped.' }
+        req.onText(piece)
+        await new Promise((r) => setTimeout(r, 25))
+      }
+    }
+    return { ok: true, value: { ...reply, model: `mock-${req.size}` } }
+  }
 
   try {
-    const res = await getClient().chat.completions.create({
+    const body = {
       model,
       messages: req.messages,
       max_tokens: maxTokens, // required on every request
       ...(req.tools?.length ? { tools: req.tools } : {})
-    })
+    }
+    let res: OpenAI.Chat.ChatCompletion
+    if (req.onText) {
+      // Streaming: text arrives piece by piece; tool calls are assembled by the SDK.
+      const onText = req.onText
+      const stream = getClient().chat.completions.stream(body, { signal: req.signal })
+      stream.on('content', (delta) => onText(delta))
+      res = await stream.finalChatCompletion()
+    } else {
+      res = await getClient().chat.completions.create(body, { signal: req.signal })
+    }
     const msg = res.choices[0]?.message
     if (!msg) return { ok: false, error: 'The model returned an empty response.' }
 
@@ -90,6 +119,7 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
 /** Turn library errors into one sentence a user can act on. */
 function describeError(err: unknown, model: string): string {
   const { baseURL } = getConfig()
+  if (err instanceof APIUserAbortError) return 'Stopped.'
   // Order matters: the timeout class is a subclass of the connection class.
   if (err instanceof APIConnectionTimeoutError) return `The model server at ${baseURL} took too long to answer.`
   if (err instanceof APIConnectionError)
@@ -100,45 +130,4 @@ function describeError(err: unknown, model: string): string {
   if (err instanceof RateLimitError) return 'Rate limit reached. Wait a moment and try again.'
   if (err instanceof APIError) return `The model server returned an error (${err.status ?? 'unknown'}): ${err.message}`
   return `Unexpected error calling the model: ${err instanceof Error ? err.message : String(err)}`
-}
-
-// ---------------------------------------------------------------------------
-// Mock mode: deterministic replies so every feature can be built offline.
-// ---------------------------------------------------------------------------
-
-let mockCallCounter = 0
-
-function lastUserText(messages: ChatMessage[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role === 'user' && typeof m.content === 'string') return m.content
-  }
-  return ''
-}
-
-function mockReply(req: CompleteRequest): ModelReply {
-  const model = `mock-${req.size}`
-  const last = req.messages[req.messages.length - 1]
-
-  // After a tool ran, "summarize" its result the way a real model would.
-  if (last?.role === 'tool') {
-    const preview = String(last.content).slice(0, 300)
-    return { text: `(mock) Here is what I found:\n${preview}`, toolCalls: [], model }
-  }
-
-  // If tools are offered and the user asked for files, fake a tool call.
-  const text = lastUserText(req.messages)
-  const wantsFiles = /\b(list|show)\b.*\bfiles?\b/i.test(text)
-  const hasListTool = req.tools?.some((t) => t.function.name === 'list_files')
-  if (wantsFiles && hasListTool) {
-    const folder = text.match(/(?:in|of)\s+["']?([^"'\n]+?)["']?\s*$/i)?.[1] ?? '~/Downloads'
-    return {
-      text: '',
-      toolCalls: [{ id: `mock_call_${++mockCallCounter}`, name: 'list_files', arguments: JSON.stringify({ folder }) }],
-      model
-    }
-  }
-
-  if (!text) return { text: '(mock) Hello! I am pai, running in mock mode.', toolCalls: [], model }
-  return { text: `(mock) You said: "${text}". Set MODEL_MODE=live in .env for real answers.`, toolCalls: [], model }
 }

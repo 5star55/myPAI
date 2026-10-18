@@ -1,65 +1,76 @@
 /**
- * Main process entry. Creates windows and wires up IPC.
+ * Main process entry: loads config and skills, creates the windows,
+ * wires up IPC, and starts the reminder scheduler and proactive engine.
  * All privileged work (files, shell, models) happens in the main process.
  */
-import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, session } from 'electron'
 import { getConfig } from './config'
-import { registerIpc } from './ipc'
+import { registerIpc, setEnabled, setQuiet } from './ipc'
+import { refreshProactive, setChatSender } from './proactive/engine'
+import { startReminderScheduler } from './reminders/scheduler'
+import { loadSkills } from './skills/loader'
+import { stateStore } from './store/state'
+import { getChatWindow, showChat, toggleChat } from './windows/chatWindow'
+import { lifecycle } from './windows/common'
+import { createFloatWindow, getFloatWindow } from './windows/floatWindow'
 
 // Log unexpected errors instead of letting Electron show a crash dialog.
 process.on('uncaughtException', (err) => console.error('[main] uncaught exception:', err))
 process.on('unhandledRejection', (err) => console.error('[main] unhandled rejection:', err))
 
-function createMainWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 960,
-    height: 680,
-    minWidth: 640,
-    minHeight: 480,
-    title: 'pai',
-    backgroundColor: '#05060f', // matches the UI so there is no white flash
-    show: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true, // renderer cannot touch Node or Electron internals
-      nodeIntegration: false,
-      sandbox: true
-    }
-  })
+// Optional: keep data somewhere else (handy for testing with a throwaway profile).
+if (process.env.PAI_DATA_DIR) app.setPath('userData', process.env.PAI_DATA_DIR)
 
-  win.once('ready-to-show', () => win.show())
-
-  // Security: the app window never navigates away or opens new Electron windows.
-  // External links open in the user's normal browser instead.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
-  win.webContents.on('will-navigate', (event) => event.preventDefault())
-
-  // In dev, electron-vite serves the renderer with hot reload; otherwise load the built file.
-  const devUrl = process.env['ELECTRON_RENDERER_URL']
-  if (!app.isPackaged && devUrl) void win.loadURL(devUrl)
-  else void win.loadFile(join(__dirname, '../renderer/index.html'))
-
-  return win
-}
+// Only one copy of pai at a time; a second launch focuses the first.
+if (!app.requestSingleInstanceLock()) app.quit()
+app.on('second-instance', () => showChat())
 
 app.whenReady().then(() => {
   const cfg = getConfig()
   console.log(`[main] pai starting. MODEL_MODE=${cfg.mode}, base URL=${cfg.baseURL}`)
   for (const w of cfg.warnings) console.warn(`[config] ${w}`)
 
-  registerIpc()
-  createMainWindow()
-
-  // macOS: re-open a window when the dock icon is clicked.
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+  // Media permission: ONLY the chat window, ONLY the microphone (never the camera or screen).
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const fromChat = wc === getChatWindow()?.webContents
+    const types = (details as { mediaTypes?: string[] }).mediaTypes ?? []
+    callback(fromChat && permission === 'media' && types.length > 0 && types.every((t) => t === 'audio'))
   })
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => permission === 'media' && wc === getChatWindow()?.webContents)
+
+  loadSkills()
+  registerIpc({
+    isEnabled: () => stateStore.get().enabled,
+    isQuiet: () => stateStore.get().quietMode,
+    toggleChat,
+    setEnabled: (on) => void setEnabled(on),
+    setQuiet: (on) => void setQuiet(on),
+    quit: () => app.quit()
+  })
+
+  // Accepted proactive offers are sent as a chat message from the chat screen.
+  setChatSender((text) => {
+    const win = showChat()
+    const send = (): void => win.webContents.send('chat:prefill', { text })
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+    else send()
+  })
+
+  showChat()
+  createFloatWindow()
+  startReminderScheduler()
+  refreshProactive()
+
+  // macOS: clicking the dock icon re-opens the chat.
+  app.on('activate', () => showChat())
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+app.on('before-quit', () => {
+  lifecycle.quitting = true
 })
+
+// The floating icon keeps the app alive; quit from its right-click menu.
+app.on('window-all-closed', () => {
+  if (!getChatWindow() && !getFloatWindow()) app.quit()
+})
+
