@@ -63,5 +63,5 @@ vi.mock('../src/main/windows/chatWindow', () => {
       }
     }
   }
-  return { getChatWindow: () => win, showChat: () => win, toggleChat: () => {} }
+  return { getChatWindow: () => win, showChat: () => win, showChatInactive: () => win, ensureChatWindow: () => win, toggleChat: () => {} }
 })

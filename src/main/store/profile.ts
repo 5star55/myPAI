@@ -4,7 +4,7 @@
  */
 import { homedir } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
-import { PERMISSION_KEYS, TONES, type PermissionKey, type Profile } from '@shared/ipc'
+import { DEFAULT_VOICE, NATURAL_VOICES, PERMISSION_KEYS, TONES, type PermissionKey, type Profile, type VoiceChoice } from '@shared/ipc'
 import { dataFile } from '../paths'
 import { JsonStore, isObj, str } from './jsonStore'
 
@@ -21,7 +21,8 @@ const DEFAULT_PERMISSIONS: Record<PermissionKey, boolean> = {
   apps: true,
   reminders: true,
   web: true,
-  memory: true
+  memory: true,
+  shell: true // each command still asks unless "run and report" is chosen
 }
 
 export function defaultProfile(): Profile {
@@ -33,8 +34,20 @@ export function defaultProfile(): Profile {
     approvedFolders: [],
     permissions: { ...DEFAULT_PERMISSIONS },
     enabledSkills: [],
-    proactive: true
+    proactive: true,
+    wakeWord: false,
+    voice: { ...DEFAULT_VOICE },
+    commandMode: 'ask'
   }
+}
+
+function sanitizeVoice(raw: unknown): VoiceChoice {
+  if (!isObj(raw)) return { ...DEFAULT_VOICE }
+  const engine = raw.engine === 'system' ? 'system' : 'natural'
+  const rate = typeof raw.rate === 'number' && Number.isFinite(raw.rate) ? Math.min(1.3, Math.max(0.8, raw.rate)) : 1
+  let voice = str(raw.voice).slice(0, 100)
+  if (engine === 'natural' && !NATURAL_VOICES.some((v) => v.id === voice)) voice = DEFAULT_VOICE.voice
+  return { engine, voice, rate }
 }
 
 /** Expand "~" and make a path absolute. */
@@ -67,7 +80,10 @@ export function sanitizeProfile(raw: unknown): Profile {
       PERMISSION_KEYS.map((k) => [k, typeof perms[k] === 'boolean' ? perms[k] : d.permissions[k]])
     ) as Record<PermissionKey, boolean>,
     enabledSkills: [...new Set(skills.filter((s): s is string => typeof s === 'string'))],
-    proactive: typeof raw.proactive === 'boolean' ? raw.proactive : d.proactive
+    proactive: typeof raw.proactive === 'boolean' ? raw.proactive : d.proactive,
+    wakeWord: raw.wakeWord === true,
+    voice: sanitizeVoice(raw.voice),
+    commandMode: raw.commandMode === 'auto' ? 'auto' : 'ask'
   }
 }
 

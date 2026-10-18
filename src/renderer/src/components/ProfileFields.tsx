@@ -31,7 +31,7 @@ export function IdentityFields({ profile, set }: { profile: Profile; set: Patch 
         <span>Tone</span>
         <div className="choice-grid">
           {TONES.map((t) => (
-            <button key={t} type="button" className={`choice glass ${profile.tone === t ? 'choice-on' : ''}`} onClick={() => set({ tone: t })}>
+            <button key={t} type="button" className={`choice choice-tone glass ${profile.tone === t ? 'choice-on' : ''}`} onClick={() => set({ tone: t })}>
               <strong>{t}</strong>
               <small>{TONE_HINT[t]}</small>
             </button>

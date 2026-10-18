@@ -3,9 +3,10 @@
  * wires up IPC, and starts the reminder scheduler and proactive engine.
  * All privileged work (files, shell, models) happens in the main process.
  */
-import { app, session } from 'electron'
+import { app, globalShortcut, session } from 'electron'
+import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
-import { registerIpc, setEnabled, setQuiet } from './ipc'
+import { openEcospace, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -40,6 +41,8 @@ app.whenReady().then(() => {
 
   loadSkills()
   registerIpc({
+    talk: toggleVoice,
+    openEcospace,
     isEnabled: () => stateStore.get().enabled,
     isQuiet: () => stateStore.get().quietMode,
     toggleChat,
@@ -58,6 +61,11 @@ app.whenReady().then(() => {
 
   showChat()
   createFloatWindow()
+
+  // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
+  if (!globalShortcut.register(VOICE_HOTKEY, toggleVoice)) {
+    console.warn(`[voice] could not register ${VOICE_HOTKEY}; another app may be using it`)
+  }
   startReminderScheduler()
   refreshProactive()
 
@@ -68,6 +76,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   lifecycle.quitting = true
 })
+app.on('will-quit', () => globalShortcut.unregisterAll())
 
 // The floating icon keeps the app alive; quit from its right-click menu.
 app.on('window-all-closed', () => {

@@ -8,8 +8,14 @@ Electron + React + TypeScript. Works fully offline in mock mode, with a local mo
 
 | | |
 | --- | --- |
-| **Chat** | Chat window plus a floating always-on-top orb (click: open/close, drag: move, right-click: menu) |
-| **Tools** | List, move, rename, organize and delete files (delete goes to the Trash), summarize documents, open apps, reminders (one-time and repeating), web search (Tavily), memory |
+| **Ecospace** (home screen) | Give tasks by typing or talking. Each runs in the background as a live card (steps, timer, *Needs you* when waiting for permission), up to 3 at once, and the rest queue. Finished tasks are saved with all their details. The floating orb opens a **mini Ecospace** |
+| **Chat** | Replies stream in live. Chat window plus a floating always-on-top orb (click: open/close, drag: move, right-click: menu) |
+| **Live suggestions** | Chips appear while you type or speak: matching files in your approved folders, installed apps, reminder times, searches. Tab or click to use. Worked out locally in milliseconds, with no model call |
+| **Voice** | Mic button: your words appear **live in the message box** as you speak (transcribed on your computer by Whisper), and you can fix any word while the mic is on. Speaker button: replies are read aloud with your OS voices |
+| **Hands-free** | Press **⌘⇧Space** (Ctrl+Shift+Space) in any app, or say **“Hey [assistant name]”** (optional). You see your words live on the orb, get 2.5 s to *Send now* / *Edit*, then hear the answer. Safe actions can be approved by saying “yes” |
+| **Tools** | Create, read, list, move, rename, organize and delete files (delete goes to the Trash), summarize documents, **run terminal commands**, open apps, reminders (one-time and repeating), web search (Tavily, shown as result cards), memory |
+| **Shows its work** | A live "✻ Thinking… (8s · esc to stop)" line and one row per action (`⏺ Ran ls -la`, `⎿ output`), expandable |
+| **Chat history** | Every conversation is saved in full on your computer: messages, times, each step with its output, and web results. Search, reopen, rename or delete chats |
 | **Permissions** | A dialog before **every** action, showing the exact path. Approvals last for the session, or "always for this folder". Deletes and overwrites need a second confirmation |
 | **Folder allowlist** | Enforced in code. Paths outside your approved folders get a special warning and are never remembered automatically. System folders, key folders and pai's own files are always refused |
 | **Off switch** | One click (top bar, or right-click the orb). Stops the reply in progress and denies everything pending |
@@ -55,7 +61,15 @@ All model settings live in `.env` and are read only by [`src/main/config.ts`](sr
 | `TAVILY_API_KEY` | Optional: web search |
 | `PAI_DATA_DIR` | Optional: store pai's data in another folder (e.g. for testing) |
 
-**Ollama (local):** install Ollama, run `ollama pull llama3.1:8b`, then set `MODEL_MODE=live`.
+**Ollama (local, free):**
+
+```bash
+brew install ollama            # or download from ollama.com (Windows/Linux too)
+brew services start ollama     # runs in the background (or: ollama serve)
+ollama pull llama3.1:8b        # ~4.9 GB, once
+```
+
+Then set `MODEL_MODE=live` in `.env`. `llama3.1:8b` handles tool calling much better than 3B models. It needs about 8 GB of free RAM.
 
 **Nebius Token Factory:** set `MODEL_BASE_URL=https://api.tokenfactory.nebius.com/v1/`, your key, and the Nemotron model IDs. To list the IDs your key can use, run the `curl` command in `.env.example`.
 
@@ -112,9 +126,13 @@ skills/              one .md or .json file per skill
 tests/               Vitest tests (Electron is faked)
 ```
 
-### Writing a skill
+### Adding skills
 
-Create `skills/my-skill.md`, then click **Reload files** on the Skills screen:
+On the **Skills** screen: **Upload skills…** (or drag `.md` / `.json` files onto the page), review each file's name, permissions and full instructions, then **Install**. New skills start switched off. You can also write one with **+ New skill**, and edit or delete your own skills (built-in ones are read-only; "Make my own copy" to customise). Your skills live in `<data folder>/skills/`, a folder the assistant itself can never write to.
+
+A skill's instructions are followed like your own words, so only install skills you trust. Skills never grant permissions; every action still asks.
+
+The file format:
 
 ```markdown
 ---
@@ -126,6 +144,29 @@ When the user asks to study, summarize their notes file and ask 3 quiz questions
 ```
 
 `permissions` must be names from: `files_read, files_write, files_delete, documents, apps, reminders, web, memory`. A skill stays inactive until all of them are on.
+
+## Terminal commands
+
+Settings → Commands → choose **Ask every time** (default: each command shows the exact text and folder first) or **Run and report** (commands run straight away and are shown in the chat and Activity log). In both modes:
+
+- risky commands (`sudo`, `rm -r`, `curl … | sh`, disk tools, `git push`, shutdown…) need a red double confirmation;
+- commands start in an approved folder; other folders ask with a warning;
+- pai's own data/code, `.env`, `~/.ssh`/`~/.aws` and the keychain are refused;
+- API keys are removed from the command environment; 60 s time limit; Stop/off switch kills the command and anything it started.
+
+## Saved chats
+
+Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Library/Application Support/pai/conversations`). Use the ☰ panel in the chat to search, reopen, rename or delete them. They never leave your computer.
+
+## Voice
+
+- **Hands-free:** press **⌘⇧Space** (Windows/Linux: **Ctrl+Shift+Space**) anywhere. Talk, and stop when you're done; pai notices the pause. Your words show live on the floating orb, then for 2.5 s with **Send now / Edit / Cancel** so you can catch a misheard word. **Edit** opens the chat with the text in the box. The answer is spoken, then pai listens a few more seconds for a follow-up. Say "thanks" or press the hotkey again to end.
+- **Wake word (optional, Settings → Hands-free voice):** say **“Hey [assistant name]”**. It's whatever name you gave it, so renaming the assistant changes the wake word. The mic stays on while this is enabled (you'll see the OS mic indicator), and only phrases starting with the wake word are acted on.
+- **Approving by voice:** during a spoken conversation, safe actions are read out ("Set a reminder… Should I go ahead?"), and you can answer "yes" or "no". **Deletes, overwrites and anything outside your approved folders always need a click.**
+- **Mic button in the chat:** click it and talk. Your words appear live in the box, and you can edit them while it listens; new speech is added after your edit. Click the mic to stop (the text stays for you to check), or press Enter to stop and send.
+- **Listen:** the speaker button reads replies aloud using the voices built into your OS (macOS: System Settings → Accessibility → Spoken Content adds better voices).
+- **Privacy:** the first use downloads the Whisper speech model (~80 MB) from Hugging Face into pai's data folder. After that, all transcription happens on your computer and audio is never saved or sent anywhere. Recordings are capped at 60 s, and near-silent ones are ignored.
+- macOS asks for microphone access the first time. Only the chat window may use the mic, and never the camera or screen.
 
 ## Security and privacy
 
@@ -143,7 +184,7 @@ When the user asks to study, summarize their notes file and ask 3 quiz questions
 - `summarize_document` reads text formats (`.txt .md .csv .json .html …`), but not PDF or Word yet.
 - On macOS, window titles need the Screen Recording permission. Without it, proactive rules only see the app name.
 - Notifications from an unsigned dev build may need to be allowed for "Electron" in System Settings → Notifications.
-- Replies arrive all at once (no streaming yet).
+- Voice input is English-first; the Whisper `base` model is a balance of speed and accuracy.
 
 ## Roadmap
 

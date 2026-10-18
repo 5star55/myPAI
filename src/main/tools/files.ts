@@ -3,7 +3,7 @@
  * Nothing is ever permanently deleted: deletes and overwrites go to the Trash.
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, stat } from 'node:fs/promises'
+import { mkdir, open, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
 import { checkPath, isInside, realPath } from '../security/allowlist'
@@ -239,5 +239,120 @@ export const organizeFolder: Tool = {
         return `Moved ${moved} file(s) into ${cats.join(', ')}.${skipped.length ? ` Skipped (name already taken): ${skipped.join(', ')}.` : ''}`
       }
     }
+  }
+}
+
+const MAX_WRITE_CHARS = 1_000_000
+const MAX_READ_BYTES = 200_000
+
+/** First lines of a text, for the preview under the step. */
+const firstLines = (text: string, n = 20) => text.split('\n').slice(0, n).join('\n')
+
+export const createFile: Tool = {
+  name: 'create_file',
+  description: 'Create a text file (e.g. notes, a script, a list) with the given content. Fails if the file exists unless overwrite is true.',
+  permission: 'files_write',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: 'Full path of the new file, e.g. ~/Documents/notes.txt' },
+      content: { type: 'string', description: 'The full text to write into the file' },
+      overwrite: { type: 'boolean', description: 'Replace an existing file (old one goes to Trash). Default false.' }
+    },
+    required: ['path', 'content']
+  },
+  async prepare(args) {
+    const check = checkPath(needString(args, 'path'))
+    if (!check.ok) return { error: check.error }
+    const content = typeof args.content === 'string' ? args.content : ''
+    if (content.length > MAX_WRITE_CHARS) return { error: 'That content is too large (max 1 MB).' }
+    validName(basename(check.path))
+    const exists = existsSync(check.path)
+    if (exists && (await stat(check.path)).isDirectory()) return { error: `"${check.path}" is a folder.` }
+    const overwrite = optBool(args, 'overwrite')
+    if (exists && !overwrite) return { error: `"${check.path}" already exists. Ask the user if it should be replaced.` }
+    const lines = content ? content.split('\n').length : 0
+    return {
+      action: exists ? 'REPLACE a file (old one goes to Trash)' : 'Create a file',
+      target: check.path,
+      preview: firstLines(content, 12) || '(empty file)',
+      destructive: exists,
+      alsoNeeds: exists ? ['files_delete'] : undefined,
+      folder: check.folder ?? undefined,
+      outsideFolders: outsideOf(check),
+      run: async () => {
+        await mkdir(dirname(check.path), { recursive: true })
+        if (exists) await shell.trashItem(check.path)
+        await writeFile(check.path, content, 'utf8')
+        return { text: `Created ${check.path} (${lines} line${lines === 1 ? '' : 's'}).`, output: firstLines(content) }
+      }
+    }
+  }
+}
+
+export const createFolder: Tool = {
+  name: 'create_folder',
+  description: 'Create a new folder (and any missing parent folders).',
+  permission: 'files_write',
+  parameters: {
+    type: 'object',
+    properties: { path: { type: 'string', description: 'Full path of the folder to create' } },
+    required: ['path']
+  },
+  prepare(args) {
+    const check = checkPath(needString(args, 'path'), { isFolder: true })
+    if (!check.ok) return { error: check.error }
+    if (existsSync(check.path)) return { error: `"${check.path}" already exists.` }
+    return {
+      action: 'Create a folder',
+      target: check.path,
+      folder: check.folder ?? undefined,
+      outsideFolders: outsideOf(check),
+      run: async () => {
+        await mkdir(check.path, { recursive: true })
+        return `Created folder ${check.path}.`
+      }
+    }
+  }
+}
+
+export const readFile: Tool = {
+  name: 'read_file',
+  description: 'Read the text of a file (up to 200 KB). Use this to look inside a file before changing or explaining it.',
+  permission: 'documents',
+  parameters: {
+    type: 'object',
+    properties: { path: { type: 'string', description: 'Full path of the file' } },
+    required: ['path']
+  },
+  async prepare(args) {
+    const check = checkPath(needString(args, 'path'), { mustExist: true })
+    if (!check.ok) return { error: check.error }
+    const s = await stat(check.path)
+    if (!s.isFile()) return { error: `"${check.path}" is not a file.` }
+    return {
+      action: 'Read a file',
+      target: check.path,
+      folder: check.folder ?? undefined,
+      outsideFolders: outsideOf(check),
+      run: async () => {
+        const buf = await readFileBytes(check.path)
+        if (buf.includes(0)) throw new Error('That looks like a binary file, not text.')
+        const text = buf.toString('utf8')
+        const more = s.size > MAX_READ_BYTES ? `\n…(file is ${formatSize(s.size)}; showing the first ${formatSize(MAX_READ_BYTES)})` : ''
+        return { text: `Contents of ${check.path}:\n${text}${more}`, output: firstLines(text) }
+      }
+    }
+  }
+}
+
+async function readFileBytes(path: string): Promise<Buffer> {
+  const fh = await open(path, 'r')
+  try {
+    const buf = Buffer.alloc(MAX_READ_BYTES)
+    const { bytesRead } = await fh.read(buf, 0, MAX_READ_BYTES, 0)
+    return buf.subarray(0, bytesRead)
+  } finally {
+    await fh.close()
   }
 }

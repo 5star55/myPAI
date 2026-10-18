@@ -2,20 +2,25 @@
  * MainApp — the main window: first-run setup, then the app shell with
  * sidebar navigation, the power switch, and the permission dialog.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { AppState, Profile, PublicConfig } from '@shared/ipc'
 import { Chat } from './components/Chat'
 import { PermissionDialog } from './components/PermissionDialog'
 import { PowerSwitch } from './components/PowerSwitch'
 import { useData, usePaiEvent } from './hooks'
+import { handsFree } from './voice/handsFree'
+import { setVoiceChoice } from './audio'
 import { ActivityView } from './views/ActivityView'
 import { MemoryView } from './views/MemoryView'
 import { RemindersView } from './views/RemindersView'
 import { SettingsView } from './views/SettingsView'
 import { Setup } from './views/Setup'
 import { SkillsView } from './views/SkillsView'
+import { Ecospace } from './views/Ecospace'
+import { runTaskAndWait } from './tasks'
 
 const TABS = [
+  { id: 'ecospace', label: 'Ecospace', icon: 'M12 3l1.8 4.6L18.5 9l-4.7 1.6L12 15l-1.8-4.4L5.5 9l4.7-1.4zM5 17l.9 2.1L8 20l-2.1.9L5 23l-.9-2.1L2 20l2.1-.9zM19 15l.7 1.6 1.6.7-1.6.7L19 20l-.7-1.6-1.6-.7 1.6-.7z' },
   { id: 'chat', label: 'Chat', icon: 'M4 5h16v11H8l-4 4z' },
   { id: 'activity', label: 'Activity', icon: 'M3 12h4l3-8 4 16 3-8h4' },
   { id: 'memory', label: 'Memory', icon: 'M12 3a6 6 0 0 0-6 6c0 2.5 1.5 3.5 2 5v3h8v-3c.5-1.5 2-2.5 2-5a6 6 0 0 0-6-6zM9 21h6' },
@@ -26,7 +31,9 @@ const TABS = [
 type Tab = (typeof TABS)[number]['id']
 
 export function MainApp() {
-  const [tab, setTab] = useState<Tab>('chat')
+  const [tab, setTab] = useState<Tab>('ecospace')
+  const [ecoDraft, setEcoDraft] = useState<string | null>(null)
+  const takeEcoDraft = useCallback(() => setEcoDraft(null), [])
   const [state, setState] = useState<AppState | null>(null)
   const [config, setConfig] = useState<PublicConfig | null>(null)
   const profile = useData<Profile>(() => window.pai.getProfile(), 'profile')
@@ -36,6 +43,32 @@ export function MainApp() {
     window.pai.getState().then((r) => r.ok && setState(r.value))
   }, [])
   usePaiEvent('state:changed', setState)
+  usePaiEvent('ui:navigate', ({ tab: t }) => setTab(t))
+
+  // Talking to pai (hotkey, "Hey <name>", the mic in the Ecospace or on the orb) runs a task.
+  useEffect(() => {
+    handsFree.setSender((text) => runTaskAndWait(text, 'voice'))
+    handsFree.setEditor((text) => {
+      setEcoDraft(text)
+      setTab('ecospace')
+    })
+    return () => {
+      handsFree.setSender(null)
+      handsFree.setEditor(null)
+    }
+  }, [])
+  usePaiEvent('voice:toggle', () => void handsFree.toggle())
+  usePaiEvent('voice:review', ({ action }) => handsFree.resolveReview(action))
+
+  // Hands-free voice follows the profile (name = wake word) and the off switch.
+  const p = profile.data
+  useEffect(() => {
+    if (p) setVoiceChoice(p.voice)
+  }, [p?.voice.engine, p?.voice.voice, p?.voice.rate])
+  useEffect(() => {
+    if (!p || !state || !p.setupComplete) return
+    void handsFree.configure({ name: p.assistantName, wakeWord: p.wakeWord, enabled: state.enabled })
+  }, [p?.assistantName, p?.wakeWord, p?.setupComplete, state?.enabled])
 
   if (!profile.data || !state) return <div className="shell" />
 
@@ -89,6 +122,7 @@ export function MainApp() {
         </nav>
 
         <div className="content">
+          {tab === 'ecospace' && <Ecospace profile={profile.data} enabled={state.enabled} incomingDraft={ecoDraft} onDraftTaken={takeEcoDraft} />}
           {/* Chat stays mounted so the conversation survives tab switches. */}
           <div className="tab-pane" hidden={tab !== 'chat'}>
             <Chat assistantName={name} enabled={state.enabled} />

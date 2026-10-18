@@ -16,6 +16,19 @@ const MAX_SECONDS = 60
 
 type Transcriber = (audio: Float32Array, opts?: Record<string, unknown>) => Promise<{ text: string } | { text: string }[]>
 
+/** Root-mean-square loudness of the loudest 100 ms, 0..1. Speech is usually > 0.02. */
+const MIN_LOUDNESS = 0.01
+export function loudness(samples: Float32Array): number {
+  const win = SAMPLE_RATE / 10
+  let best = 0
+  for (let start = 0; start + win <= samples.length; start += win) {
+    let sum = 0
+    for (let i = start; i < start + win; i++) sum += samples[i] * samples[i]
+    best = Math.max(best, Math.sqrt(sum / win))
+  }
+  return best
+}
+
 let loading: Promise<Transcriber> | null = null
 
 /** Load the model once; later calls reuse it. */
@@ -42,10 +55,22 @@ export function warmUpSpeech(): void {
   void getTranscriber().catch((err) => console.warn('[speech] warm-up failed:', err instanceof Error ? err.message : err))
 }
 
-export async function transcribe(input: unknown): Promise<Result<string>> {
+/** One transcription at a time (live captions and the final text share the model). */
+let queue: Promise<unknown> = Promise.resolve()
+
+export function transcribe(input: unknown): Promise<Result<string>> {
+  const run = queue.then(() => transcribeNow(input))
+  queue = run.catch(() => {})
+  return run
+}
+
+async function transcribeNow(input: unknown): Promise<Result<string>> {
   if (!(input instanceof Float32Array)) return { ok: false, error: 'Invalid audio.' }
   if (input.length < SAMPLE_RATE * 0.3) return { ok: false, error: 'That was too short. Hold the mic button a bit longer.' }
   if (input.length > SAMPLE_RATE * MAX_SECONDS) return { ok: false, error: `Recordings can be at most ${MAX_SECONDS} seconds.` }
+
+  // Whisper "hears" words like "you" in silence, so skip recordings that are too quiet.
+  if (loudness(input) < MIN_LOUDNESS) return { ok: false, error: "I didn't hear anything. Is the right microphone selected?" }
 
   let transcriber: Transcriber
   try {

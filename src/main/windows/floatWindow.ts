@@ -6,14 +6,21 @@
  * keeping its bottom-right corner (where the orb sits) in place.
  */
 import { BrowserWindow, Menu, screen } from 'electron'
+import type { FloatSize } from '@shared/ipc'
 import { loadRenderer, secureWebPreferences } from './common'
 
-const COMPACT = { width: 84, height: 84 }
-const EXPANDED = { width: 360, height: 200 }
+const SIZES: Record<FloatSize, { width: number; height: number }> = {
+  orb: { width: 84, height: 84 },
+  card: { width: 360, height: 200 }, // an offer or the voice caption
+  panel: { width: 400, height: 470 } // the mini Ecospace
+}
+const COMPACT = SIZES.orb
 
 let floatWin: BrowserWindow | null = null
 
 export interface FloatMenuActions {
+  talk(): void
+  openEcospace(): void
   isEnabled(): boolean
   isQuiet(): boolean
   toggleChat(): void
@@ -42,11 +49,14 @@ export function createFloatWindow(): BrowserWindow {
     skipTaskbar: true,
     hasShadow: false,
     alwaysOnTop: true,
+    // macOS: a "panel" window floats over full-screen apps and appears on every desktop (Space).
+    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
     show: false,
     webPreferences: secureWebPreferences()
   })
-  win.setAlwaysOnTop(true, 'floating')
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 'screen-saver' is the highest level, so the orb stays above full-screen apps too.
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
   win.once('ready-to-show', () => win.showInactive()) // don't steal focus
   loadRenderer(win, 'float')
   floatWin = win
@@ -64,15 +74,27 @@ export function dragFloat(dx: number, dy: number): void {
   win.setPosition(x, y)
 }
 
-/** Grow (offer visible) or shrink, anchored at the bottom-right corner. */
-export function setFloatExpanded(expanded: boolean): void {
+/** Resize, keeping the bottom-right corner (where the orb sits) in place. */
+export function setFloatExpanded(sizeName: FloatSize): void {
   const win = getFloatWindow()
   if (!win) return
-  const size = expanded ? EXPANDED : COMPACT
+  const size = SIZES[sizeName] ?? COMPACT
   const b = win.getBounds()
   const right = b.x + b.width
   const bottom = b.y + b.height
-  win.setBounds({ x: right - size.width, y: bottom - size.height, ...size })
+  // Stay on screen even if the orb was dragged near the top-left.
+  const area = screen.getDisplayMatching(b).workArea
+  const x = Math.max(area.x, right - size.width)
+  const y = Math.max(area.y, bottom - size.height)
+  win.setBounds({ x, y, ...size })
+}
+
+/** Let the user type in the mini Ecospace. */
+export function focusFloat(): void {
+  const win = getFloatWindow()
+  if (!win) return
+  win.setFocusable(true)
+  win.focus()
 }
 
 export function showFloatMenu(actions: FloatMenuActions): void {
@@ -80,6 +102,8 @@ export function showFloatMenu(actions: FloatMenuActions): void {
   if (!win) return
   const enabled = actions.isEnabled()
   Menu.buildFromTemplate([
+    { label: 'Talk to me (⌘⇧Space)', click: actions.talk, enabled },
+    { label: 'Open Ecospace', click: actions.openEcospace },
     { label: 'Open / close chat', click: actions.toggleChat },
     { type: 'separator' },
     { label: enabled ? 'Turn assistant OFF' : 'Turn assistant ON', click: () => actions.setEnabled(!enabled) },

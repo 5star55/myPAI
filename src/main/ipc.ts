@@ -7,23 +7,28 @@
  * - Every argument is treated as untrusted and validated.
  */
 import { existsSync, statSync } from 'node:fs'
-import { BrowserWindow, dialog, ipcMain, systemPreferences, type IpcMainInvokeEvent } from 'electron'
-import { IPC, type AppState, type Result } from '@shared/ipc'
+import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron'
+import { IPC, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
 import { cancelRun, runChat } from './agent/loop'
 import { getPublicConfig } from './config'
 import { refreshProactive, respondOffer } from './proactive/engine'
 import { denyAllPending, respondPermission } from './security/permissions'
-import { listSkills, loadSkills } from './skills/loader'
+import { deleteUserSkill, getSkill, installImport, listSkills, loadSkills, previewImport, saveUserSkill, showUserSkillsFolder } from './skills/loader'
 import { transcribe, warmUpSpeech } from './speech'
+import { synthesize, warmUpTts } from './tts'
+import { getSuggestions, resetSuggestIndex } from './suggest'
 import { clearActivity, listActivity } from './store/activity'
 import { listAlways, removeAlways } from './store/approvals'
 import { addMemory, deleteMemory, listMemory, updateMemory } from './store/memory'
+import { deleteConversation, getConversation, listConversations, renameConversation, saveConversation } from './store/conversations'
 import { profileStore, sanitizeProfile } from './store/profile'
 import { deleteReminder, listReminders } from './store/reminders'
 import { stateStore } from './store/state'
-import { getChatWindow, toggleChat } from './windows/chatWindow'
+import { ensureChatWindow, getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { broadcast } from './windows/common'
-import { dragFloat, getFloatWindow, showFloatMenu } from './windows/floatWindow'
+import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
+import { clearFinishedTasks, deleteTask, listTasks, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
+import type { FloatSize } from '@shared/ipc'
 
 type From = 'chat' | 'float' | 'any'
 
@@ -56,9 +61,10 @@ const ok = <T>(value: T): Result<T> => ({ ok: true, value })
 export function setEnabled(enabled: boolean): AppState {
   const state = stateStore.update((s) => ({ ...s, enabled }))
   if (!enabled) {
-    cancelRun() // abort the model request in progress
+    cancelRun() // abort the chat reply in progress
+    stopAllTasks() // and every Ecospace task
     denyAllPending() // close open permission dialogs as "deny"
-  }
+  } else resumeTasks()
   refreshProactive()
   broadcast('state:changed', state)
   return state
@@ -72,6 +78,23 @@ export function setQuiet(quietMode: boolean): AppState {
 }
 
 const isDir = (p: string): boolean => existsSync(p) && statSync(p).isDirectory()
+
+/** Show the main window on the Ecospace. */
+export function openEcospace(): void {
+  const win = showChat()
+  const send = (): void => win.webContents.send('ui:navigate', { tab: 'ecospace' })
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** Hotkey / menu: start or stop a hands-free conversation. Runs in the chat window, even hidden. */
+export function toggleVoice(): void {
+  if (!stateStore.get().enabled) return
+  const win = ensureChatWindow()
+  const send = (): void => win.webContents.send('voice:toggle', {})
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+}
 
 export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.getConfig, 'any', () => ok(getPublicConfig()))
@@ -92,6 +115,7 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     const profile = sanitizeProfile(raw)
     profile.approvedFolders = profile.approvedFolders.filter(isDir)
     profileStore.set(profile)
+    resetSuggestIndex() // folders may have changed
     refreshProactive()
     broadcast('data:changed', { what: 'profile' })
     return ok(profile)
@@ -118,6 +142,13 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.memoryUpdate, 'chat', (id, text) => ok(updateMemory(id, text)))
   handle(IPC.memoryDelete, 'chat', (id) => ok(deleteMemory(id)))
 
+  // Saved conversations
+  handle(IPC.convList, 'chat', (q) => ok(listConversations(q)))
+  handle(IPC.convGet, 'chat', (id) => ok(getConversation(id)))
+  handle(IPC.convSave, 'chat', (id, messages) => ok(saveConversation(id, messages)))
+  handle(IPC.convRename, 'chat', (id, title) => ok(renameConversation(id, title)))
+  handle(IPC.convDelete, 'chat', (id) => ok(deleteConversation(id)))
+
   // Reminders
   handle(IPC.remindersList, 'chat', () => ok(listReminders()))
   handle(IPC.remindersDelete, 'chat', (id) => ok(deleteReminder(id)))
@@ -128,10 +159,42 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     loadSkills()
     return ok(listSkills(profileStore.get()))
   })
+  handle(IPC.skillsPick, 'chat', async () => {
+    const win = getChatWindow()
+    const opts = {
+      title: 'Upload skills',
+      buttonLabel: 'Review',
+      properties: ['openFile' as const, 'multiSelections' as const],
+      filters: [{ name: 'Skills', extensions: ['md', 'json'] }]
+    }
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    return ok(res.canceled ? [] : previewImport(res.filePaths))
+  })
+  handle(IPC.skillsPreview, 'chat', (paths) => ok(previewImport(paths)))
+  handle(IPC.skillsInstall, 'chat', (tokens) => {
+    const ids = installImport(tokens)
+    broadcast('data:changed', { what: 'skills' })
+    return ok(ids)
+  })
+  handle(IPC.skillsGet, 'chat', (id) => ok(getSkill(id)))
+  handle(IPC.skillsSave, 'chat', (draft) => {
+    const s = saveUserSkill(draft)
+    broadcast('data:changed', { what: 'skills' })
+    return ok(s)
+  })
+  handle(IPC.skillsDelete, 'chat', async (id) => {
+    await deleteUserSkill(id)
+    // Forget it in the profile too.
+    profileStore.update((p) => ({ ...p, enabledSkills: p.enabledSkills.filter((s) => s !== id) }))
+    broadcast('data:changed', { what: 'skills' })
+    return ok(undefined)
+  })
+  handle(IPC.skillsShowFolder, 'chat', async () => ok(await showUserSkillsFolder()))
 
   // Voice input (local Whisper)
   handle(IPC.micAccess, 'chat', async () => {
-    if (process.platform !== 'darwin') return ok(true)
+    // Automated tests run with Chromium's fake microphone; there is no real mic to ask about.
+    if (process.platform !== 'darwin' || app.commandLine.hasSwitch('use-fake-device-for-media-stream')) return ok(true)
     if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return ok(true)
     return ok(await systemPreferences.askForMediaAccess('microphone'))
   })
@@ -140,6 +203,49 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     if (!stateStore.get().enabled) return { ok: false, error: 'The assistant is switched off.' }
     return transcribe(audio)
   })
+
+  handle(IPC.voiceStatus, 'chat', (raw) => {
+    const s = raw as VoiceStatus
+    const states: VoiceStatus['state'][] = ['idle', 'listening', 'thinking', 'speaking', 'review']
+    if (!states.includes(s?.state)) return { ok: false, error: 'Bad status.' }
+    const status: VoiceStatus = { state: s.state, caption: typeof s.caption === 'string' ? s.caption.slice(0, 200) : undefined }
+    getFloatWindow()?.webContents.send('voice:status', status)
+    return ok(undefined)
+  })
+  handle(IPC.voiceToggle, 'any', () => ok(toggleVoice()))
+  handle(IPC.voiceReview, 'float', (action) => {
+    if (action !== 'send' && action !== 'edit') return { ok: false, error: 'Bad action.' }
+    const win = action === 'edit' ? showChat() : ensureChatWindow() // Edit opens the chat with the text
+    win.webContents.send('voice:review', { action })
+    return ok(undefined)
+  })
+  handle(IPC.floatExpand, 'float', (size) => ok(setFloatExpanded((['orb', 'card', 'panel'] as FloatSize[]).includes(size as FloatSize) ? (size as FloatSize) : 'orb')))
+  handle(IPC.floatFocus, 'float', () => ok(focusFloat()))
+
+  // Ecospace tasks (from the main window or the orb)
+  handle(IPC.taskStart, 'any', (prompt, source) => ok(startTask(prompt, source)))
+  handle(IPC.taskList, 'any', () => ok(listTasks()))
+  handle(IPC.taskStop, 'any', (id) => ok(stopTask(id)))
+  handle(IPC.taskRetry, 'any', (id) => ok(retryTask(id)))
+  handle(IPC.taskDelete, 'chat', (id) => ok(deleteTask(id)))
+  handle(IPC.taskClearFinished, 'chat', () => ok(clearFinishedTasks()))
+  handle(IPC.openEcospace, 'any', () => ok(openEcospace()))
+  // Natural voice (local Kokoro) and the OS voice settings page.
+  handle(IPC.ttsSynthesize, 'chat', (text, voice, rate) => synthesize(text, voice, rate))
+  handle(IPC.ttsWarmUp, 'chat', () => ok(warmUpTts()))
+  handle(IPC.openVoiceSettings, 'chat', async () => {
+    // Fixed, known URLs only: this never opens anything the renderer asks for.
+    const url =
+      process.platform === 'darwin'
+        ? 'x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent'
+        : process.platform === 'win32'
+          ? 'ms-settings:speech'
+          : null
+    if (!url) return { ok: false, error: 'Open your system speech settings to add voices.' }
+    await shell.openExternal(url)
+    return ok(undefined)
+  })
+  handle(IPC.suggest, 'chat', async (text) => ok(stateStore.get().enabled ? await getSuggestions(text) : []))
 
   // Offers + windows
   handle(IPC.offerRespond, 'float', (id, choice) => ok(respondOffer(id, choice)))

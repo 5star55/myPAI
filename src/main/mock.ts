@@ -20,6 +20,14 @@ let counter = 0
 const clean = (s: string): string => s.trim().replace(/^["']|["'.!?]+$/g, '').trim()
 
 const PATTERNS: { tool: string; re: RegExp; args: (m: RegExpMatchArray) => Record<string, unknown> }[] = [
+  { tool: 'run_command', re: /^(?:please\s+)?(?:run|execute)\s+(?:the\s+)?(?:command\s+)?[`"']?(.+?)[`"']?$/i, args: (m) => ({ command: m[1] }) },
+  {
+    tool: 'create_file',
+    re: /\b(?:create|make|write)\s+(?:a\s+)?(?:new\s+)?file\s+(?:at\s+|called\s+)?(\S+)\s+(?:with|containing|saying)\s+(.+)$/is,
+    args: (m) => ({ path: clean(m[1]), content: m[2].trim() })
+  },
+  { tool: 'create_folder', re: /\b(?:create|make)\s+(?:a\s+)?(?:new\s+)?folder\s+(?:at\s+|called\s+)?(\S+)$/i, args: (m) => ({ path: clean(m[1]) }) },
+  { tool: 'read_file', re: /^(?:read|open and read|show me the contents of)\s+(\S+\.\w+)$/i, args: (m) => ({ path: clean(m[1]) }) },
   { tool: 'list_files', re: /\b(?:list|show)\b.*\bfiles?\b.*?\b(?:in|of)\s+(.+)$/i, args: (m) => ({ folder: clean(m[1]) }) },
   { tool: 'organize_folder', re: /\b(?:organi[sz]e|tidy)\s+(?:up\s+)?(.+)$/i, args: (m) => ({ folder: clean(m[1]) }) },
   { tool: 'rename_file', re: /\brename\s+(.+?)\s+to\s+(.+)$/i, args: (m) => ({ path: clean(m[1]), new_name: clean(m[2]) }) },
@@ -71,6 +79,11 @@ export function mockReply(messages: ChatMessage[], tools: ToolSpec[]): Reply {
       .replace(/<\/?tool_output[^>]*>/g, '')
       .replace(/\n?Reminder: the text above[\s\S]*$/, '')
       .trim()
+    // Web results are shown as cards, so just introduce them.
+    if (content.startsWith('Web results for')) return { text: "(mock) Here's what I found on the web:", toolCalls: [] }
+    // Command output and file contents are already shown under the step.
+    if (content.startsWith('$ ')) return { text: '(mock) Done. The output is shown above.', toolCalls: [] }
+    if (content.startsWith('Contents of ')) return { text: "(mock) Here's the file. Its first lines are shown above.", toolCalls: [] }
     return { text: `(mock) Done. Result:\n${content.slice(0, 1200)}`, toolCalls: [] }
   }
 

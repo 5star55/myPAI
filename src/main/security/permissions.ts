@@ -18,7 +18,7 @@ import { addAlways, hasAlways } from '../store/approvals'
 import { normalizeFolder, profileStore } from '../store/profile'
 import { broadcast } from '../windows/common'
 import { isEnabled } from '../store/state'
-import { getChatWindow, showChat } from '../windows/chatWindow'
+import { getChatWindow, showChatInactive } from '../windows/chatWindow'
 
 const TIMEOUT_MS = 120_000
 
@@ -33,6 +33,11 @@ export interface PermissionAsk {
   scope?: string
   /** Folders outside the allowlist that this action touches. */
   outsideFolders?: string[]
+  /** Never remember an approval (terminal commands ask every time). */
+  neverRemember?: boolean
+  preview?: string
+  /** Which task asked (shown in the dialog). */
+  context?: string
 }
 
 /** Approvals that last until the app quits. */
@@ -51,7 +56,8 @@ export async function requestPermission(ask: PermissionAsk, signal?: AbortSignal
 
   const outside = ask.outsideFolders ?? []
   const key = keyFor(ask)
-  if (!ask.destructive && !outside.length && (sessionApprovals.has(key) || hasAlways(key))) return true
+  const remember = !ask.destructive && !outside.length && !ask.neverRemember
+  if (remember && (sessionApprovals.has(key) || hasAlways(key))) return true
 
   const first = await prompt(ask, 'ask', signal)
   if (!first.allow) return false
@@ -62,8 +68,8 @@ export async function requestPermission(ask: PermissionAsk, signal?: AbortSignal
     return second.allow && isEnabled()
   }
 
-  // "Allow once" outside the approved folders is never remembered.
-  if (outside.length) return isEnabled()
+  // "Allow once" outside the approved folders, and commands, are never remembered.
+  if (!remember) return isEnabled()
   sessionApprovals.add(key)
   if (first.always && ask.folder) addAlways(key)
   return isEnabled()
@@ -87,9 +93,11 @@ function prompt(ask: PermissionAsk, stage: PermissionRequest['stage'], signal?: 
     target: ask.target,
     stage,
     destructive: ask.destructive,
-    canRemember: !ask.destructive && !!ask.folder && !ask.outsideFolders?.length,
+    canRemember: !ask.destructive && !!ask.folder && !ask.outsideFolders?.length && !ask.neverRemember,
     folder: ask.folder,
-    outside: ask.outsideFolders?.length ? ask.outsideFolders : undefined
+    outside: ask.outsideFolders?.length ? ask.outsideFolders : undefined,
+    preview: ask.preview?.slice(0, 1500),
+    context: ask.context?.slice(0, 120)
   }
 
   return new Promise((resolve) => {
@@ -104,7 +112,8 @@ function prompt(ask: PermissionAsk, stage: PermissionRequest['stage'], signal?: 
     pending.set(id, { resolve: finish, timer: setTimeout(() => finish(deny(id)), TIMEOUT_MS) })
     signal?.addEventListener('abort', () => finish(deny(id)), { once: true })
 
-    const win = showChat()
+    // Shown without stealing focus: you might be talking to pai from another app.
+    const win = showChatInactive()
     const send = (): void => win.webContents.send('permission:request', request)
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
     else send()

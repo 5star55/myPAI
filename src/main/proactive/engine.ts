@@ -19,7 +19,7 @@ import { profileStore } from '../store/profile'
 import { stateStore } from '../store/state'
 import { approvedFolderFor } from '../security/allowlist'
 import { showChat } from '../windows/chatWindow'
-import { getFloatWindow, setFloatExpanded } from '../windows/floatWindow'
+import { getFloatWindow } from '../windows/floatWindow'
 import { forgetActiveWindow, pollActiveWindow } from './activeWindow'
 import { countLooseFiles, downloadsDir, startDownloadsWatcher, stopDownloadsWatcher } from './downloads'
 
@@ -69,14 +69,12 @@ function show(o: LiveOffer): void {
   if (!win) return
   current = o
   lastShownAt = Date.now()
-  setFloatExpanded(true)
   win.webContents.send('offer:show', { id: o.id, text: o.text, acceptLabel: o.acceptLabel })
 }
 
 function clear(): void {
   if (!current) return
   getFloatWindow()?.webContents.send('offer:clear', { id: current.id })
-  setFloatExpanded(false)
   current = null
 }
 

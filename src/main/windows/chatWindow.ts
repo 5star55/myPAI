@@ -20,7 +20,8 @@ function createChatWindow(): BrowserWindow {
     title: 'pai',
     backgroundColor: '#05060f', // matches the UI so there is no white flash
     show: false,
-    webPreferences: secureWebPreferences()
+    // Keep timers and the microphone running while hidden (hands-free voice).
+    webPreferences: { ...secureWebPreferences(), backgroundThrottling: false }
   })
   win.once('ready-to-show', () => win.show())
   win.on('close', (event) => {
@@ -41,6 +42,18 @@ export function showChat(): BrowserWindow {
   win.show()
   win.focus()
   return win
+}
+
+/** Show without taking focus (e.g. a permission dialog while you work elsewhere). */
+export function showChatInactive(): BrowserWindow {
+  const win = getChatWindow() ?? createChatWindow()
+  if (!win.isVisible() && !win.webContents.isLoading()) win.showInactive()
+  return win
+}
+
+/** Make sure the chat window exists (it runs hands-free voice even while hidden). */
+export function ensureChatWindow(): BrowserWindow {
+  return getChatWindow() ?? createChatWindow()
 }
 
 export function toggleChat(): void {

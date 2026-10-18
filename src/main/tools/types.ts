@@ -6,7 +6,10 @@
  *                    and describes exactly what it WILL do (shown in the dialog).
  *   run()         -> does the work. Only called after the user approved.
  */
-import type { PermissionKey } from '@shared/ipc'
+import type { PermissionKey, ToolData } from '@shared/ipc'
+
+/** A tool can return plain text, or text for the model plus data for the UI. */
+export type ToolOutput = string | { text: string; data?: ToolData; output?: string }
 
 /** JSON Schema for the tool's arguments (sent to the model). */
 export interface ToolParameters {
@@ -30,7 +33,13 @@ export interface PreparedCall {
   rememberScope?: string
   /** Extra permission groups this specific call needs (e.g. overwrite needs files_delete). */
   alsoNeeds?: PermissionKey[]
-  run: () => Promise<string>
+  /** Text shown in the permission dialog (file content, the exact command…). */
+  preview?: string
+  /** Ask every single time; never remember an approval (e.g. terminal commands). */
+  neverRemember?: boolean
+  /** Skip the dialog (only set by tools whose user setting says so, e.g. commands in "run and report"). */
+  autoApprove?: boolean
+  run: (signal: AbortSignal) => Promise<ToolOutput>
 }
 
 export type PrepareResult = PreparedCall | { error: string }

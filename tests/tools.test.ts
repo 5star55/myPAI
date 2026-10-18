@@ -22,7 +22,7 @@ const ready = (r: PrepareResult) => {
 
 describe('file tools', () => {
   it('list_files lists the folder', async () => {
-    const out = await ready(await listFiles.prepare({ folder: join(TMP, dir) })).run()
+    const out = await ready(await listFiles.prepare({ folder: join(TMP, dir) })).run(new AbortController().signal)
     expect(out).toContain('a.txt')
     expect(out).toContain('photo.jpg')
   })
@@ -53,14 +53,14 @@ describe('file tools', () => {
     expect('error' in (await deleteFile.prepare({ path: join(TMP, dir) }))).toBe(true)
     const r = ready(await deleteFile.prepare({ path: p('a.txt') }))
     expect(r.destructive).toBe(true)
-    await r.run()
+    await r.run(new AbortController().signal)
     expect(existsSync(p('a.txt'))).toBe(false)
     expect(readdirSync(join(TMP, '.trash')).some((f) => f.endsWith('a.txt'))).toBe(true)
   })
 
   it('organize sorts by type and never overwrites', async () => {
     makeFiles({ [`${dir}/Images/photo.jpg`]: 'already here' })
-    const out = await ready(await organizeFolder.prepare({ folder: join(TMP, dir) })).run()
+    const out = await ready(await organizeFolder.prepare({ folder: join(TMP, dir) })).run(new AbortController().signal)
     expect(existsSync(p('Documents/a.txt'))).toBe(true)
     expect(existsSync(p('Documents/notes.pdf'))).toBe(true)
     expect(existsSync(p('photo.jpg'))).toBe(true) // skipped: name taken

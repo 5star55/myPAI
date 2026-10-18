@@ -6,14 +6,18 @@ import type { Profile } from '@shared/ipc'
 import type { ToolSpec } from '../model'
 import { openApp } from './apps'
 import { summarizeDocument } from './documents'
-import { deleteFile, listFiles, moveFile, organizeFolder, renameFile } from './files'
+import { createFile, createFolder, deleteFile, listFiles, moveFile, organizeFolder, readFile, renameFile } from './files'
 import { recallMemory, saveMemory } from './memory'
 import { listRemindersTool, setReminder } from './reminders'
 import type { Tool } from './types'
+import { runCommand } from './shell'
 import { webSearch } from './web'
 
 export const ALL_TOOLS: Tool[] = [
   listFiles,
+  readFile,
+  createFile,
+  createFolder,
   moveFile,
   renameFile,
   deleteFile,
@@ -24,7 +28,8 @@ export const ALL_TOOLS: Tool[] = [
   listRemindersTool,
   webSearch,
   saveMemory,
-  recallMemory
+  recallMemory,
+  runCommand
 ]
 
 /** Tools whose permission group is switched on. Disabled tools are never even offered to the model. */

@@ -1,8 +1,20 @@
-/** Settings: edit the generated profile, quiet mode, and saved "always allow" approvals. */
-import { useEffect, useState } from 'react'
-import type { AppState, Profile, PublicConfig, SkillInfo } from '@shared/ipc'
-import { FoldersField, IdentityFields, PermissionsField, ProactiveField, SkillsField } from '../components/ProfileFields'
+/**
+ * Settings — the generated AI's preferences, one section at a time.
+ *
+ *   ┌ sections ┐┌ section title / description ───────────────┐
+ *   │ General  ││ [card] row: label + help ........ control │
+ *   │ Voice    ││ [card] ...                                │
+ *   └──────────┘└───────────────────────────────────────────┘
+ *              [ You have unsaved changes · Discard · Save ]   (only when needed)
+ *
+ * Switches in "General" (on/off, quiet mode) apply instantly. Everything else
+ * is edited locally and saved with the Save bar.
+ */
+import { useEffect, useState, type ReactNode } from 'react'
+import { VOICE_HOTKEY, type AppState, type Profile, type PublicConfig, type SkillInfo } from '@shared/ipc'
+import { FoldersField, IdentityFields, PermissionsField, SkillsField } from '../components/ProfileFields'
 import { Toggle } from '../components/Toggle'
+import { VoicePicker } from '../components/VoicePicker'
 
 interface Props {
   profile: Profile
@@ -11,13 +23,39 @@ interface Props {
   onSaved: (p: Profile) => void
 }
 
+const SECTIONS = [
+  { id: 'general', label: 'General', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 12h2M18 12h2M12 4v2M12 18v2' },
+  { id: 'personality', label: 'Personality', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20c1.5-4 4.5-6 8-6s6.5 2 8 6' },
+  { id: 'voice', label: 'Voice', icon: 'M9 3h6v11H9zM5 11a7 7 0 0 0 14 0M12 18v3' },
+  { id: 'folders', label: 'Folders', icon: 'M3 6h6l2 2h10v11H3z' },
+  { id: 'permissions', label: 'Permissions', icon: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z' },
+  { id: 'commands', label: 'Commands', icon: 'M4 17l5-5-5-5M12 19h8' },
+  { id: 'skills', label: 'Skills', icon: 'M12 2l2.6 6.6L21 9l-5 4.4L17.5 21 12 17l-5.5 4L8 13.4 3 9l6.4-.4z' }
+] as const
+type Section = (typeof SECTIONS)[number]['id']
+
+const isMac = navigator.userAgent.includes('Mac')
+const hotkeyLabel = isMac ? '⌘⇧Space' : VOICE_HOTKEY.replace('CommandOrControl', 'Ctrl').replace(/\+/g, '+')
+
+function loadSection(): Section {
+  try {
+    const s = localStorage.getItem('pai.settingsSection')
+    if (SECTIONS.some((x) => x.id === s)) return s as Section
+  } catch {
+    /* default below */
+  }
+  return 'general'
+}
+
 export function SettingsView({ profile: saved, state, config, onSaved }: Props) {
+  const [section, setSection] = useState<Section>(loadSection)
   const [profile, setProfile] = useState(saved)
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [approvals, setApprovals] = useState<string[]>([])
-  const [status, setStatus] = useState<string | null>(null)
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }))
   const dirty = JSON.stringify(profile) !== JSON.stringify(saved)
+  const name = profile.assistantName || 'pai'
 
   useEffect(() => setProfile(saved), [saved])
   useEffect(() => {
@@ -25,115 +63,248 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
     window.pai.listApprovals().then((r) => r.ok && setApprovals(r.value))
   }, [])
 
+  function go(s: Section) {
+    setSection(s)
+    try {
+      localStorage.setItem('pai.settingsSection', s)
+    } catch {
+      /* not remembered */
+    }
+  }
+
   async function save() {
     const res = await window.pai.saveProfile(profile)
     if (res.ok) {
       onSaved(res.value)
-      setStatus('Saved.')
-    } else setStatus(res.error)
-    setTimeout(() => setStatus(null), 2500)
+      setStatus({ ok: true, text: 'Saved' })
+    } else setStatus({ ok: false, text: res.error })
+    setTimeout(() => setStatus(null), 2200)
   }
 
   return (
-    <section className="view">
-      <header className="view-head sticky">
-        <div>
-          <h1 className="view-title">Settings</h1>
-          <p className="view-sub">Your generated AI. Changes apply to the next message.</p>
-        </div>
-        <div className="row">
-          {status && <span className="muted">{status}</span>}
-          <button className="btn-ghost" onClick={() => setProfile(saved)} disabled={!dirty}>
-            Discard
+    <section className="settings">
+      <nav className="settings-nav" aria-label="Settings sections">
+        <h1 className="settings-title">Settings</h1>
+        {SECTIONS.map((s) => (
+          <button key={s.id} className={`settings-tab ${section === s.id ? 'active' : ''}`} onClick={() => go(s.id)}>
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden>
+              <path d={s.icon} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" />
+            </svg>
+            {s.label}
           </button>
-          <button className="btn-primary btn-inline" onClick={save} disabled={!dirty}>
-            Save
-          </button>
-        </div>
-      </header>
+        ))}
+      </nav>
 
-      <div className="settings-grid">
-        <Panel title="Status">
-          <div className="perm">
-            <div>
-              <div>Assistant on</div>
-              <small className="muted">The off switch. Off stops the current reply and denies every pending action.</small>
-            </div>
-            <Toggle on={state.enabled} onChange={(on) => window.pai.setEnabled(on)} label="Assistant on" />
-          </div>
-          <div className="perm">
-            <div>
-              <div>Quiet mode</div>
-              <small className="muted">No proactive offers until you turn this off.</small>
-            </div>
-            <Toggle on={state.quietMode} onChange={(on) => window.pai.setQuiet(on)} label="Quiet mode" />
-          </div>
-          <ProactiveField profile={profile} set={set} />
-          {config && (
-            <p className="hint">
-              Model: <code>{config.mode}</code> · chat <code>{config.smallModel}</code> · tools <code>{config.bigModel}</code> · web search{' '}
-              <code>{config.webSearchConfigured ? 'configured' : 'not configured'}</code>. Edit <code>.env</code> and restart to change.
-            </p>
-          )}
-        </Panel>
+      <div className="settings-body">
+        {section === 'general' && (
+          <Page title="General" sub={`Turn ${name} on or off, and control when it speaks up.`}>
+            <Card>
+              <Row label="Assistant on" help="The off switch. Turning it off stops the current reply and denies everything waiting.">
+                <Toggle on={state.enabled} onChange={(on) => window.pai.setEnabled(on)} label="Assistant on" />
+              </Row>
+              <Row label="Quiet mode" help="No proactive offers until you turn this off.">
+                <Toggle on={state.quietMode} onChange={(on) => window.pai.setQuiet(on)} label="Quiet mode" />
+              </Row>
+              <Row label="Proactive offers" help="Suggestions based on the app you're using and new downloads. Never acts on its own; window titles stay in memory only.">
+                <Toggle on={profile.proactive} onChange={(on) => set({ proactive: on })} label="Proactive offers" />
+              </Row>
+            </Card>
+            {config && (
+              <Card title="Model">
+                <Row label="Mode">
+                  <span className={`chip chip-${config.mode}`}>{config.mode === 'mock' ? 'MOCK' : 'LIVE'}</span>
+                </Row>
+                <Row label="Chat model">
+                  <code>{config.smallModel}</code>
+                </Row>
+                <Row label="Tool model">
+                  <code>{config.bigModel}</code>
+                </Row>
+                <Row label="Web search">
+                  <span className={config.webSearchConfigured ? 'ok-text' : 'muted'}>{config.webSearchConfigured ? 'Configured' : 'Not configured'}</span>
+                </Row>
+                <p className="card-foot">
+                  These come from <code>.env</code>. Edit it and restart {name} to change them.
+                </p>
+              </Card>
+            )}
+            <Card title="Start over">
+              <Row label="Re-run “Generate your AI”" help="Walk through setup again. Memory, chats and logs are kept.">
+                <button
+                  className="btn-ghost"
+                  onClick={async () => {
+                    const r = await window.pai.saveProfile({ ...saved, setupComplete: false })
+                    if (r.ok) onSaved(r.value)
+                  }}
+                >
+                  Re-run setup
+                </button>
+              </Row>
+            </Card>
+          </Page>
+        )}
 
-        <Panel title="Identity">
-          <IdentityFields profile={profile} set={set} />
-        </Panel>
-        <Panel title="Approved folders">
-          <FoldersField profile={profile} set={set} />
-        </Panel>
-        <Panel title="Permissions">
-          <PermissionsField profile={profile} set={set} />
-        </Panel>
-        <Panel title="Skills">
-          <SkillsField profile={profile} set={set} skills={skills} />
-        </Panel>
+        {section === 'personality' && (
+          <Page title="Personality" sub={`Who ${name} is and how it talks to you.`}>
+            <Card>
+              <IdentityFields profile={profile} set={set} />
+            </Card>
+          </Page>
+        )}
 
-        <Panel title="Always-allowed actions">
-          {approvals.length === 0 && <p className="empty">None. Tick “always allow” in a permission dialog to add one.</p>}
-          <ul className="folder-list">
-            {approvals.map((key) => {
-              const [tool, folder] = key.split('|')
-              return (
-                <li key={key} className="folder glass">
-                  <span>
-                    <code>{tool}</code> in <code>{folder}</code>
-                  </span>
-                  <button
-                    className="btn-ghost danger"
-                    onClick={async () => {
-                      const r = await window.pai.removeApproval(key)
-                      if (r.ok) setApprovals(r.value)
-                    }}
-                  >
-                    Revoke
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        </Panel>
+        {section === 'voice' && (
+          <Page title="Voice" sub="How replies sound, and talking hands-free from any app. Click a voice to hear it.">
+            <Card title="Speaking voice">
+              <VoicePicker profile={profile} set={set} />
+            </Card>
+            <Card title="Hands-free">
+              <Row label={<>Push to talk: <kbd className="key">{hotkeyLabel}</kbd></>} help={`Works in any app. Talk, pause, and ${name} answers out loud. Safe actions can be approved by saying “yes”.`}>
+                <button className="btn-ghost" onClick={() => window.pai.toggleVoice()} disabled={!state.enabled}>
+                  Try it
+                </button>
+              </Row>
+              <Row
+                label={`Wake word: “Hey ${name}”`}
+                help="Listens for its name so you don't need the shortcut. The mic stays on (you'll see the mic indicator); nothing is recorded or saved."
+              >
+                <Toggle on={profile.wakeWord} onChange={(on) => set({ wakeWord: on })} label="Wake word" />
+              </Row>
+            </Card>
+          </Page>
+        )}
 
-        <Panel title="Start over">
-          <p className="hint">Run the “Generate your AI” setup again. Memory and logs are kept.</p>
-          <button className="btn-ghost" onClick={async () => {
-            const r = await window.pai.saveProfile({ ...saved, setupComplete: false })
-            if (r.ok) onSaved(r.value)
-          }}>
-            Re-run setup
-          </button>
-        </Panel>
+        {section === 'folders' && (
+          <Page title="Folders" sub={`Where ${name} may work with files. Anything else asks with a warning first.`}>
+            <Card title="Approved folders">
+              <FoldersField profile={profile} set={set} />
+            </Card>
+            <Card title="Always-allowed actions">
+              {approvals.length === 0 ? (
+                <p className="empty">None yet. Tick “always allow” in a permission dialog to add one.</p>
+              ) : (
+                <ul className="folder-list">
+                  {approvals.map((key) => {
+                    const [tool, folder] = key.split('|')
+                    return (
+                      <li key={key} className="folder glass">
+                        <span>
+                          <code>{tool}</code> in <code>{folder}</code>
+                        </span>
+                        <button
+                          className="btn-ghost danger"
+                          onClick={async () => {
+                            const r = await window.pai.removeApproval(key)
+                            if (r.ok) setApprovals(r.value)
+                          }}
+                        >
+                          Revoke
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </Card>
+          </Page>
+        )}
+
+        {section === 'permissions' && (
+          <Page title="Permissions" sub="What kinds of actions are allowed at all. You still approve each action in a dialog.">
+            <Card>
+              <PermissionsField profile={profile} set={set} />
+            </Card>
+          </Page>
+        )}
+
+        {section === 'commands' && (
+          <Page title="Terminal commands" sub={`Let ${name} run commands on this computer, and choose how they're approved.`}>
+            <Card>
+              <Row label={`Let ${name} run commands`} help="Commands can do anything your user account can.">
+                <Toggle on={profile.permissions.shell} onChange={(on) => set({ permissions: { ...profile.permissions, shell: on } })} label="Run terminal commands" />
+              </Row>
+            </Card>
+            <Card title="Approval">
+              <div className={`choice-grid ${profile.permissions.shell ? '' : 'is-disabled'}`}>
+                <button type="button" className={`choice glass ${profile.commandMode === 'ask' ? 'choice-on' : ''}`} onClick={() => set({ commandMode: 'ask' })} disabled={!profile.permissions.shell}>
+                  <strong>Ask every time</strong>
+                  <small>Shows the exact command and folder before each one runs.</small>
+                </button>
+                <button type="button" className={`choice glass ${profile.commandMode === 'auto' ? 'choice-on' : ''}`} onClick={() => set({ commandMode: 'auto' })} disabled={!profile.permissions.shell}>
+                  <strong>Run and report</strong>
+                  <small>Runs right away; each command and its output shows in the chat and the Activity log.</small>
+                </button>
+              </div>
+            </Card>
+            <Card title="Always protected">
+              <ul className="bullets">
+                <li>Risky commands (sudo, rm -r, downloads piped into a shell, git push…) always need a double confirmation.</li>
+                <li>Commands start inside your approved folders; anything outside them asks first.</li>
+                <li>{name}'s own files, your .env and your keys are off-limits; API keys are hidden from commands.</li>
+                <li>A 60-second time limit, and Stop or the power button ends a command instantly.</li>
+              </ul>
+            </Card>
+          </Page>
+        )}
+
+        {section === 'skills' && (
+          <Page title="Skills" sub="Extra know-how from files in the skills/ folder. A skill only works if its permissions are on.">
+            <Card>
+              <SkillsField profile={profile} set={set} skills={skills} />
+            </Card>
+          </Page>
+        )}
       </div>
+
+      {(dirty || status) && (
+        <div className={`save-bar glass ${status && !dirty ? (status.ok ? 'save-ok' : 'save-err') : ''}`} role="status">
+          {dirty ? (
+            <>
+              <span>You have unsaved changes</span>
+              <button className="btn-ghost" onClick={() => setProfile(saved)}>
+                Discard
+              </button>
+              <button className="btn-primary btn-inline" onClick={save}>
+                Save changes
+              </button>
+            </>
+          ) : (
+            <span>{status?.ok ? '✓ ' : ''}{status?.text}</span>
+          )}
+        </div>
+      )}
     </section>
   )
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Page({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {
   return (
-    <section className="glass panel settings-panel">
-      <h2 className="panel-title">{title}</h2>
+    <div className="settings-page">
+      <header className="settings-head">
+        <h2>{title}</h2>
+        <p>{sub}</p>
+      </header>
+      {children}
+    </div>
+  )
+}
+
+function Card({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <section className="s-card glass">
+      {title && <h3 className="s-card-title">{title}</h3>}
       {children}
     </section>
+  )
+}
+
+function Row({ label, help, children }: { label: ReactNode; help?: string; children: ReactNode }) {
+  return (
+    <div className="s-row">
+      <div className="s-row-text">
+        <div className="s-row-label">{label}</div>
+        {help && <div className="s-row-help">{help}</div>}
+      </div>
+      <div className="s-row-control">{children}</div>
+    </div>
   )
 }
