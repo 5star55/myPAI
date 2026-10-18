@@ -1,0 +1,10 @@
+node_modules/
+out/
+dist/
+# Secrets: never commit your real .env
+.env
+.env.*
+!.env.example
+# Local user data written by the app at runtime
+userdata/
+.DS_Store
