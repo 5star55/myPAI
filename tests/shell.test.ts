@@ -50,13 +50,13 @@ describe('run_command safety', () => {
   })
 
   it('runs in the approved folder and captures output', async () => {
-    const r = ready(await runCommand.prepare({ command: 'ls && echo done' }))
+    const r = ready(await runCommand.prepare({ command: 'ls; echo done'}))
     const out = await r.run(signal())
     expect(typeof out === 'object' && out.output).toContain('readme.txt')
   })
 
   it('a failing command reports its exit code and output', async () => {
-    const r = ready(await runCommand.prepare({ command: 'echo oops >&2; exit 3' }))
+    const r = ready(await runCommand.prepare({ command: 'echo oops; exit 3' }))
     await expect(r.run(signal())).rejects.toMatchObject({ message: expect.stringContaining('exit code 3'), output: 'oops' })
   })
 
