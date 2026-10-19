@@ -35,6 +35,7 @@ describe('run_command safety', () => {
 
   it("refuses commands that touch pai's files or secrets", async () => {
     expect(touchesProtected('cat .env')).toBe(true)
+    expect(touchesProtected('type C:\\Users\\Hp\\.ssh\\id_rsa')).toBe(true)
     expect(touchesProtected('cat ~/.ssh/id_rsa')).toBe(true)
     expect(touchesProtected(`cat "${join(TMP, 'userData', 'approvals.json')}"`)).toBe(true)
     expect("error" in (await runCommand.prepare({ command: "cat .env" }))).toBe(true)
