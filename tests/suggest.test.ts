@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getSuggestions, resetSuggestIndex } from '../src/main/suggest'
 import { TMP, makeFiles, useProfile } from './helpers'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 
 const texts = async (input: string) => (await getSuggestions(input)).map((s) => s.text)
 
