@@ -32,6 +32,8 @@ type Tab = (typeof TABS)[number]['id']
 
 export function MainApp() {
   const [tab, setTab] = useState<Tab>('ecospace')
+  // Bumped when main opens a Settings section, so Settings re-reads which section to show.
+  const [settingsKey, setSettingsKey] = useState(0)
   const [ecoDraft, setEcoDraft] = useState<string | null>(null)
   const takeEcoDraft = useCallback(() => setEcoDraft(null), [])
   const [state, setState] = useState<AppState | null>(null)
@@ -43,7 +45,17 @@ export function MainApp() {
     window.pai.getState().then((r) => r.ok && setState(r.value))
   }, [])
   usePaiEvent('state:changed', setState)
-  usePaiEvent('ui:navigate', ({ tab: t }) => setTab(t))
+  usePaiEvent('ui:navigate', ({ tab: t, section }) => {
+    if (section) {
+      try {
+        localStorage.setItem('pai.settingsSection', section) // Settings opens on this section
+      } catch {
+        /* opens on its default section */
+      }
+      setSettingsKey((k) => k + 1)
+    }
+    setTab(t)
+  })
   // Reminders are also read aloud (not in quiet mode, and not over a voice conversation).
   usePaiEvent('reminder:fired', ({ message }) => {
     if (!state?.quietMode && !handsFree.active) speak(`Reminder: ${message}`)
@@ -136,7 +148,7 @@ export function MainApp() {
           {tab === 'reminders' && <RemindersView />}
           {tab === 'skills' && <SkillsView profile={profile.data} onSaved={(p) => profile.setData(p)} />}
           {tab === 'settings' && (
-            <SettingsView profile={profile.data} state={state} config={config} onSaved={(p) => profile.setData(p)} />
+            <SettingsView key={settingsKey} profile={profile.data} state={state} config={config} onSaved={(p) => profile.setData(p)} />
           )}
         </div>
       </div>

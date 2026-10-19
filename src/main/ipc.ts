@@ -27,11 +27,13 @@ import { stateStore } from './store/state'
 import { notify, scheduleNextReminder, snoozeReminder } from './reminders/scheduler'
 import { ensureChatWindow, getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { broadcast } from './windows/common'
+import { getComposeWindow } from './windows/composeWindow'
+import { chooseCompletion, composeAccess, composeAction, cancelCompose, syncComposeHotkey } from './compose'
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
-import { clearFinishedTasks, deleteTask, listTasks, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
+import { clearFinishedTasks, deleteTask, listTasks, replyToTask, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
 import type { FloatSize } from '@shared/ipc'
 
-type From = 'chat' | 'float' | 'any'
+type From = 'chat' | 'float' | 'compose' | 'any'
 
 function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -39,6 +41,7 @@ function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
   const float = getFloatWindow()
   if (from === 'chat') return !!win && win === chat
   if (from === 'float') return !!win && win === float
+  if (from === 'compose') return !!win && win === getComposeWindow()
   return !!win && (win === chat || win === float)
 }
 
@@ -64,6 +67,7 @@ export function setEnabled(enabled: boolean): AppState {
   if (!enabled) {
     cancelRun() // abort the chat reply in progress
     stopAllTasks() // and every Ecospace task
+    cancelCompose() // and the "Complete my text" popup
     denyAllPending() // close open permission dialogs as "deny"
   } else resumeTasks()
   refreshProactive()
@@ -84,6 +88,14 @@ const isDir = (p: string): boolean => existsSync(p) && statSync(p).isDirectory()
 export function openEcospace(): void {
   const win = showChat()
   const send = (): void => win.webContents.send('ui:navigate', { tab: 'ecospace' })
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** Show the main window on a Settings section (e.g. "writing"). */
+export function openSettings(section: string): void {
+  const win = showChat()
+  const send = (): void => win.webContents.send('ui:navigate', { tab: 'settings', section })
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
   else send()
 }
@@ -117,6 +129,7 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     profile.approvedFolders = profile.approvedFolders.filter(isDir)
     profileStore.set(profile)
     resetSuggestIndex() // folders may have changed
+    syncComposeHotkey() // "Complete my text" may have been switched on or off
     refreshProactive()
     broadcast('data:changed', { what: 'profile' })
     return ok(profile)
@@ -234,6 +247,7 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.taskList, 'any', () => ok(listTasks()))
   handle(IPC.taskStop, 'any', (id) => ok(stopTask(id)))
   handle(IPC.taskRetry, 'any', (id) => ok(retryTask(id)))
+  handle(IPC.taskReply, 'any', (id, text) => ok(replyToTask(id, text)))
   handle(IPC.taskDelete, 'chat', (id) => ok(deleteTask(id)))
   handle(IPC.taskClearFinished, 'chat', () => ok(clearFinishedTasks()))
   handle(IPC.openEcospace, 'any', () => ok(openEcospace()))
@@ -252,11 +266,17 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     await shell.openExternal(url)
     return ok(undefined)
   })
-  handle(IPC.suggest, 'chat', async (text) => ok(stateStore.get().enabled ? await getSuggestions(text) : []))
+  handle(IPC.suggest, 'any', async (text) => ok(stateStore.get().enabled ? await getSuggestions(text) : []))
 
   // Offers + windows
   handle(IPC.offerRespond, 'float', (id, choice) => ok(respondOffer(id, choice)))
   handle(IPC.toggleChat, 'any', () => ok(toggleChat()))
   handle(IPC.floatDrag, 'float', (dx, dy) => ok(dragFloat(Number(dx), Number(dy))))
   handle(IPC.floatMenu, 'float', () => ok(showFloatMenu(menu)))
+
+  // "Complete my text" popup (other apps)
+  handle(IPC.composeChoose, 'compose', async (i) => ok(await chooseCompletion(i)))
+  handle(IPC.composeCancel, 'compose', () => ok(cancelCompose()))
+  handle(IPC.composeAction, 'compose', async () => ok(await composeAction()))
+  handle(IPC.composeAccess, 'chat', async (prompt) => ok(await composeAccess(prompt === true)))
 }

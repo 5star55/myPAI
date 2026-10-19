@@ -8,8 +8,11 @@
   "private": true,
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
+    "prestart": "node scripts/build-native.mjs",
     "start": "electron-vite preview",
+    "predev": "node scripts/build-native.mjs",
     "dev": "electron-vite dev",
+    "prebuild": "node scripts/build-native.mjs",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run"

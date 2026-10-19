@@ -82,3 +82,26 @@ describe('Ecospace tasks', () => {
     expect(() => startTask('   ', 'ecospace')).toThrow()
   })
 })
+
+describe('replying to a finished task', () => {
+  it('continues the task with the whole conversation, keeping earlier steps', async () => {
+    const { startTask, replyToTask, listTasks } = await import('../src/main/tasks/manager')
+    const first = startTask('remember that I like green tea', 'ecospace')
+    await waitUntil(() => listTasks().find((t) => t.id === first.id)?.status === 'done')
+    const stepsBefore = listTasks().find((t) => t.id === first.id)!.steps.length
+
+    replyToTask(first.id, 'what do you remember about tea')
+    await waitUntil(() => listTasks().find((t) => t.id === first.id)?.status === 'done')
+    const after = listTasks().find((t) => t.id === first.id)!
+    expect(after.turns?.map((t) => t.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(after.turns?.[2].content).toBe('what do you remember about tea')
+    expect(after.steps.length).toBeGreaterThan(stepsBefore)
+  })
+
+  it('refuses a reply while the task is still running, or an empty one', async () => {
+    const { startTask, replyToTask } = await import('../src/main/tasks/manager')
+    const t = startTask('list my reminders', 'ecospace')
+    expect(() => replyToTask(t.id, 'hi')).toThrow(/finish/)
+    expect(() => replyToTask('nope', 'hi')).toThrow()
+  })
+})

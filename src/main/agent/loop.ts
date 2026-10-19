@@ -29,11 +29,22 @@ import { isEnabled } from '../store/state'
 import { availableTools, findTool, toSpec } from '../tools/registry'
 import { ToolInputError, type PreparedCall } from '../tools/types'
 import { broadcast } from '../windows/common'
-import { needsTools } from './router'
-import { extractTextToolCalls } from './textToolCalls'
+import { isNoToolRefusal, isSmallTalk, needsTools } from './router'
+import { extractTextToolCalls, findStrayToolCalls } from './textToolCalls'
 
 const MAX_ROUNDS = 6
 const MAX_TOOL_OUTPUT = 6000
+const CONFUSED_REPLY = "Sorry, I got mixed up and couldn't finish that. Please try again, or say it a little differently."
+
+/** Sent (as a note from the app) when the model "calls" something that isn't a tool, such as a skill. */
+function strayCallNote(names: string[], withTools: boolean): string {
+  const list = names.map((n) => `"${n}"`).join(', ')
+  return [
+    `(Note from the pai app, not the user: ${list} is not a tool, so nothing ran. Skills are instructions for you to follow yourself, never something to call.`,
+    'Do not write JSON. Reply to the user\'s last message directly, in plain language',
+    withTools ? 'or use one of your real tools through the tool-calling interface.)' : '.)'
+  ].join(' ')
+}
 
 /** How one run reports progress. The chat and each Ecospace task have their own. */
 export interface RunHooks {
@@ -210,10 +221,12 @@ export async function runAgent(history: ChatTurn[], signal: AbortSignal, hooks: 
   const profile = profileStore.get()
   const lastText = history[history.length - 1].content
   const tools = availableTools(profile)
-  const useTools = tools.length > 0 && (hooks.forceTools === true || needsTools(lastText))
+  // Tasks get tools even without action words, but small talk ("how are you?") is just chat.
+  let useTools = tools.length > 0 && (needsTools(lastText) || (hooks.forceTools === true && !isSmallTalk(lastText)))
 
   const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(profile, useTools) }, ...history]
   const steps: ToolStep[] = []
+  let nudged = false
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     if (round > 0) hooks.emit({ kind: 'text-reset' })
@@ -238,7 +251,26 @@ export async function runAgent(history: ChatTurn[], signal: AbortSignal, hooks: 
         hooks.emit({ kind: 'text-reset' })
       }
     }
+    // "I don't have a function for that": ask again as plain chat (no tools), once, before anything ran.
+    if (toolCalls.length === 0 && useTools && steps.length === 0 && isNoToolRefusal(text)) {
+      useTools = false
+      messages[0] = { role: 'system', content: buildSystemPrompt(profile, false) }
+      hooks.emit({ kind: 'text-reset' })
+      continue
+    }
     if (toolCalls.length === 0) {
+      // JSON "calling" something that isn't a tool (e.g. a skill): never show it as the answer.
+      // (Skipped when the reply has real content around it, or the user asked for JSON.)
+      const stray = findStrayToolCalls(text)
+      if (stray.names.length && stray.rest.length < 200 && !/\bjson\b/i.test(lastText)) {
+        hooks.emit({ kind: 'text-reset' })
+        if (!nudged && round < MAX_ROUNDS - 1) {
+          nudged = true
+          messages.push({ role: 'assistant', content: text }, { role: 'user', content: strayCallNote(stray.names, useTools) })
+          continue
+        }
+        text = stray.rest || CONFUSED_REPLY
+      }
       return { ok: true, value: { text: text.trim() || '(The model returned an empty reply.)', model, steps } }
     }
 

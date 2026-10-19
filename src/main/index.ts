@@ -6,7 +6,9 @@
 import { app, globalShortcut, session } from 'electron'
 import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
-import { openEcospace, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { syncComposeHotkey } from './compose'
+import { stopHelper } from './compose/helper'
+import { openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -66,6 +68,8 @@ app.whenReady().then(() => {
   if (!globalShortcut.register(VOICE_HOTKEY, toggleVoice)) {
     console.warn(`[voice] could not register ${VOICE_HOTKEY}; another app may be using it`)
   }
+  // "Complete my text" (⌥Space in other apps), only while switched on in Settings.
+  syncComposeHotkey(openSettings)
   startReminderScheduler()
   refreshProactive()
 
@@ -76,7 +80,10 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   lifecycle.quitting = true
 })
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  stopHelper()
+})
 
 // The floating icon keeps the app alive; quit from its right-click menu.
 app.on('window-all-closed', () => {

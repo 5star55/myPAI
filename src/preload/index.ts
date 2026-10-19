@@ -69,11 +69,17 @@ const api: PaiApi = {
   listTasks: () => call(IPC.taskList),
   stopTask: (id) => call(IPC.taskStop, id),
   retryTask: (id) => call(IPC.taskRetry, id),
+  replyToTask: (id, text) => call(IPC.taskReply, id, text),
   deleteTask: (id) => call(IPC.taskDelete, id),
   clearFinishedTasks: () => call(IPC.taskClearFinished),
   openEcospace: () => call(IPC.openEcospace),
   toggleVoice: () => call(IPC.voiceToggle),
   voiceReview: (action) => call(IPC.voiceReview, action),
+
+  composeChoose: (index) => call(IPC.composeChoose, index),
+  composeCancel: () => call(IPC.composeCancel),
+  composeAction: () => call(IPC.composeAction),
+  composeAccess: (prompt) => call(IPC.composeAccess, prompt),
 
   toggleChat: () => call(IPC.toggleChat),
   dragFloat: (dx, dy) => call(IPC.floatDrag, dx, dy),

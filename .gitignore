@@ -1,6 +1,8 @@
 node_modules/
 out/
 dist/
+# Built native helper (from native/axhelper, by scripts/build-native.mjs)
+native/bin/
 # Secrets: never commit your real .env
 .env
 .env.*

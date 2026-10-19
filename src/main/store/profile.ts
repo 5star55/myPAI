@@ -5,6 +5,7 @@
 import { homedir } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
 import { DEFAULT_VOICE, NATURAL_VOICES, PERMISSION_KEYS, TONES, type PermissionKey, type Profile, type VoiceChoice } from '@shared/ipc'
+import { defaultComposeSettings, sanitizeCompose } from '@shared/compose'
 import { dataFile } from '../paths'
 import { JsonStore, isObj, str } from './jsonStore'
 
@@ -37,7 +38,8 @@ export function defaultProfile(): Profile {
     proactive: true,
     wakeWord: false,
     voice: { ...DEFAULT_VOICE },
-    commandMode: 'ask'
+    commandMode: 'ask',
+    compose: defaultComposeSettings()
   }
 }
 
@@ -83,7 +85,8 @@ export function sanitizeProfile(raw: unknown): Profile {
     proactive: typeof raw.proactive === 'boolean' ? raw.proactive : d.proactive,
     wakeWord: raw.wakeWord === true,
     voice: sanitizeVoice(raw.voice),
-    commandMode: raw.commandMode === 'auto' ? 'auto' : 'ask'
+    commandMode: raw.commandMode === 'auto' ? 'auto' : 'ask',
+    compose: sanitizeCompose(raw.compose)
   }
 }
 

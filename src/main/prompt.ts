@@ -38,6 +38,8 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean): string 
       '',
       'TOOLS:',
       '- Only use a tool when you actually need it. If you can answer from what you know or from this message (like the date above), just answer.',
+      '- Most messages need no tool at all: greetings, how you are, questions, advice, plans, writing. Answer those yourself, naturally.',
+      '- Never tell the user you "don\'t have a function/tool" for something. Either use a real tool or simply answer.',
       '- Call tools through the tool-calling interface. Never write a tool call as JSON or text in your reply.',
       '- Use a tool only when the user asks you to do something on their computer, the web, reminders, or memory.',
       '- Always use full paths (e.g. ~/Downloads/file.txt). If you do not know the exact file name, list the folder first.',
@@ -68,7 +70,11 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean): string 
 
   const skills = activeSkills(profile)
   if (skills.length) {
-    parts.push('', 'ACTIVE SKILLS:')
+    parts.push(
+      '',
+      'ACTIVE SKILLS: extra know-how for you to follow yourself when it fits. A skill is NOT a tool:',
+      'never "call" a skill or write JSON for it. Just do what it says, in plain language, using your real tools when needed.'
+    )
     for (const s of skills) parts.push(`## ${s.name}`, s.instructions)
   }
 

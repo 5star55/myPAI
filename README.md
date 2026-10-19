@@ -10,6 +10,7 @@ Electron + React + TypeScript. Works fully offline in mock mode, with a local mo
 | --- | --- |
 | **Ecospace** (home screen) | Give tasks by typing or talking. Each runs in the background as a live card (steps, timer, *Needs you* when waiting for permission), up to 3 at once, and the rest queue. Finished tasks are saved with all their details. The floating orb opens a **mini Ecospace** |
 | **Chat** | Replies stream in live. Chat window plus a floating always-on-top orb (click: open/close, drag: move, right-click: menu) |
+| **Complete my text** | Writing an email or message in another app? Press **⌥Space** and pick one of 3 ways to finish your sentence; it's typed in for you. Only in apps you allow, never in password fields (macOS) |
 | **Live suggestions** | Chips appear while you type or speak: matching files in your approved folders, installed apps, reminder times, searches. Tab or click to use. Worked out locally in milliseconds, with no model call |
 | **Voice** | Mic button: your words appear **live in the message box** as you speak (transcribed on your computer by Whisper), and you can fix any word while the mic is on. Speaker button: replies are read aloud with your OS voices |
 | **Hands-free** | Press **⌘⇧Space** (Ctrl+Shift+Space) in any app, or say **“Hey [assistant name]”** (optional). You see your words live on the orb, get 2.5 s to *Send now* / *Edit*, then hear the answer. Safe actions can be approved by saying “yes” |
@@ -154,6 +155,18 @@ Settings → Commands → choose **Ask every time** (default: each command shows
 - pai's own data/code, `.env`, `~/.ssh`/`~/.aws` and the keychain are refused;
 - API keys are removed from the command environment; 60 s time limit; Stop/off switch kills the command and anything it started.
 
+## Complete my text (other apps)
+
+Settings → **Writing** → turn on **Complete my text**, then grant the **Accessibility** permission when asked (macOS lists it as pai, or "Electron"/your terminal when running from source).
+
+In a text box in an allowed app (Mail, Messages, Slack, WhatsApp, Discord and the main browsers by default), type a few words and press **⌥Space**. A popup by the cursor offers 3 continuations written by your model: press **1–3** (or ↑↓ and Enter) to insert one, **R** for new ones, **Esc** to close. In any other app it asks "Allow in <app>?" first.
+
+- It reads the text box only when you press the hotkey, and nothing is inserted until you pick.
+- Password fields, terminals and password managers are always refused.
+- Text is never saved; the Activity log notes only the app and how many characters were inserted.
+- With a cloud model in `.env`, it refuses until you switch on "Allow a cloud model".
+- It needs a small native helper (`native/axhelper`, Swift), built automatically by `npm start` / `npm run dev` when Xcode's command line tools are installed (`xcode-select --install`).
+
 ## Saved chats
 
 Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Library/Application Support/pai/conversations`). Use the ☰ panel in the chat to search, reopen, rename or delete them. They never leave your computer.
@@ -184,6 +197,7 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 - `summarize_document` reads text formats (`.txt .md .csv .json .html …`), but not PDF or Word yet.
 - On macOS, window titles need the Screen Recording permission. Without it, proactive rules only see the app name.
 - Notifications from an unsigned dev build may need to be allowed for "Electron" in System Settings → Notifications.
+- Complete my text is macOS-only. Some text boxes don't share their text (Google Docs, some web editors), so it can't help there.
 - Voice input is English-first; the Whisper `base` model is a balance of speed and accuracy.
 
 ## Roadmap

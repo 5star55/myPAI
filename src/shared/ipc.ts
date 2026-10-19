@@ -4,6 +4,7 @@
  * Both sides import from this file, so a renamed channel or a changed type
  * becomes a compile error instead of a silent runtime bug.
  */
+import type { ComposeSettings, ComposeView } from './compose'
 
 /** Every IPC call returns this shape. The renderer never has to catch exceptions. */
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -111,6 +112,8 @@ export interface Profile {
   voice: VoiceChoice
   /** 'ask' = confirm every command; 'auto' = run and report (risky ones still ask). */
   commandMode: CommandMode
+  /** "Complete my text" in other apps (hotkey). */
+  compose: ComposeSettings
 }
 
 export interface AppState {
@@ -290,6 +293,8 @@ export interface Task {
   /** Final answer. */
   result?: string
   error?: string
+  /** The whole conversation once you've replied to the task (first turn = the prompt). */
+  turns?: ChatTurn[]
 }
 
 /** How many tasks may run at the same time; the rest wait in the queue. */
@@ -431,6 +436,7 @@ export const IPC = {
   taskList: 'tasks:list',
   taskStop: 'tasks:stop',
   taskRetry: 'tasks:retry',
+  taskReply: 'tasks:reply',
   taskDelete: 'tasks:delete',
   taskClearFinished: 'tasks:clear-finished',
   openEcospace: 'window:open-ecospace',
@@ -449,7 +455,11 @@ export const IPC = {
   floatExpand: 'float:expand',
   toggleChat: 'window:toggle-chat',
   floatDrag: 'float:drag',
-  floatMenu: 'float:menu'
+  floatMenu: 'float:menu',
+  composeChoose: 'compose:choose',
+  composeCancel: 'compose:cancel',
+  composeAction: 'compose:action',
+  composeAccess: 'compose:access'
 } as const
 
 /** Push events (main -> renderer) and their payloads. */
@@ -474,9 +484,11 @@ export interface EventMap {
   /** A task was deleted. */
   'task:removed': { id: string }
   /** Main asks the main window to show a screen. */
-  'ui:navigate': { tab: 'ecospace' | 'chat' }
+  'ui:navigate': { tab: 'ecospace' | 'chat' | 'settings'; section?: string }
   /** A reminder is due (the orb shows a card; the main window reads it aloud). */
   'reminder:fired': { id: string; message: string }
+  /** What the "Complete my text" popup shows (sent to the popup only). */
+  'compose:view': ComposeView
 }
 export type EventName = keyof EventMap
 export const EVENT_NAMES: EventName[] = [
@@ -494,10 +506,17 @@ export const EVENT_NAMES: EventName[] = [
   'task:update',
   'task:removed',
   'ui:navigate',
-  'reminder:fired'
+  'reminder:fired',
+  'compose:view'
 ]
 
 /** The API the preload script exposes on window.pai. */
+export interface ComposeAccess {
+  /** false on Windows/Linux, or when the helper couldn't be built. */
+  available: boolean
+  trusted: boolean
+}
+
 export interface PaiApi {
   getConfig(): Promise<Result<PublicConfig>>
   /** Send the conversation so far; the last turn must be the user's new message. */
@@ -569,6 +588,8 @@ export interface PaiApi {
   stopTask(id: string): Promise<Result<void>>
   /** Run a finished task again (as a new task). */
   retryTask(id: string): Promise<Result<Task>>
+  /** Answer a finished task (e.g. it asked you a question) so it carries on. */
+  replyToTask(id: string, text: string): Promise<Result<Task>>
   deleteTask(id: string): Promise<Result<void>>
   clearFinishedTasks(): Promise<Result<void>>
   /** Show the main window on the Ecospace. */
@@ -596,6 +617,13 @@ export interface PaiApi {
   /** Live suggestions for what the user is typing or saying (local, no model call). */
   suggest(text: string): Promise<Result<Suggestion[]>>
 
+  /** "Complete my text" popup: insert option i, close, or press its fix-it button. */
+  composeChoose(index: number): Promise<Result<void>>
+  composeCancel(): Promise<Result<void>>
+  composeAction(): Promise<Result<void>>
+  /** Is the Accessibility permission granted? prompt=true also asks macOS / opens the settings page. */
+  composeAccess(prompt: boolean): Promise<Result<ComposeAccess>>
+
   toggleChat(): Promise<Result<void>>
   /** Move the floating icon by a screen-pixel delta. */
   dragFloat(dx: number, dy: number): Promise<Result<void>>
@@ -604,3 +632,5 @@ export interface PaiApi {
   /** Subscribe to a push event. Returns an unsubscribe function. */
   on<E extends EventName>(event: E, cb: (payload: EventMap[E]) => void): () => void
 }
+
+export type { ComposeSettings, ComposeView } from './compose'

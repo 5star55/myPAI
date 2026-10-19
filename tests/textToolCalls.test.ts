@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractTextToolCalls } from '../src/main/agent/textToolCalls'
+import { extractTextToolCalls, findStrayToolCalls } from '../src/main/agent/textToolCalls'
 import { needsTools } from '../src/main/agent/router'
 import { buildSystemPrompt } from '../src/main/prompt'
 import { defaultProfile } from '../src/main/store/profile'
@@ -28,5 +28,17 @@ describe('date questions', () => {
   it('the prompt starts with today\'s date', () => {
     const first = buildSystemPrompt(defaultProfile(), true).split('\n')[0]
     expect(first).toMatch(/^Today is .*\d{4}.*never search/)
+  })
+})
+
+describe('stray "calls" to things that are not tools', () => {
+  it('finds the skill-call JSON from the bug report', () => {
+    const { names, rest } = findStrayToolCalls('{"name": "Daily Planner", "parameters": {"function": "plan_day", "name": "Tomisin"}}')
+    expect(names).toEqual(['Daily Planner'])
+    expect(rest).toBe('')
+  })
+
+  it('ignores ordinary JSON', () => {
+    expect(findStrayToolCalls('Your settings: {"name": "Tomisin", "theme": "dark"}').names).toEqual([])
   })
 })

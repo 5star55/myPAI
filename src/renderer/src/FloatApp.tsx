@@ -5,14 +5,15 @@
  *   right-click  -> menu (talk, Ecospace, chat, on/off, quiet mode, quit)
  * When the panel is closed it still shows proactive offers and the voice status as a card.
  */
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import type { AppState, FloatSize, Offer, VoiceStatus } from '@shared/ipc'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent } from 'react'
+import type { AppState, FloatSize, Offer, Suggestion, VoiceStatus } from '@shared/ipc'
 import { TaskCard } from './components/TaskCard'
 import { usePaiEvent } from './hooks'
 import { isActiveTask, useTasks } from './tasks'
 import { chime } from './audio'
 
 const CLICK_SLOP_PX = 4
+const MAX_MINI_SUGGESTIONS = 4
 const VOICE_LABEL: Record<VoiceStatus['state'], string> = {
   idle: '',
   listening: 'Listening',
@@ -30,6 +31,7 @@ export function FloatApp() {
   const [reminders, setReminders] = useState<{ id: string; message: string }[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const tasks = useTasks()
   const drag = useRef<{ x: number; y: number; moved: number } | null>(null)
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -102,13 +104,36 @@ export function FloatApp() {
     setOffer(null)
   }
 
-  async function start() {
-    const prompt = draft.trim()
+  // Live suggestions for the task being typed (or ideas when the box is empty), while the panel is open.
+  useEffect(() => {
+    if (!panel || !state.enabled) return setSuggestions([])
+    let stale = false
+    const t = setTimeout(async () => {
+      const res = await window.pai.suggest(draft)
+      if (!stale && res.ok) setSuggestions(res.value.slice(0, MAX_MINI_SUGGESTIONS))
+    }, 120)
+    return () => {
+      stale = true
+      clearTimeout(t)
+    }
+  }, [draft, panel, state.enabled, tasks.length])
+
+  async function start(text = draft) {
+    const prompt = text.trim()
     if (!prompt) return
     setError(null)
     const res = await window.pai.startTask(prompt, 'orb')
     if (res.ok) setDraft('')
     else setError(res.error)
+    inputRef.current?.focus()
+  }
+
+  /** Tab takes the first suggestion. */
+  function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Tab' && !e.shiftKey && suggestions.length && draft.trim()) {
+      e.preventDefault()
+      setDraft(suggestions[0].text)
+    }
   }
 
   const active = tasks.filter(isActiveTask)
@@ -201,7 +226,7 @@ export function FloatApp() {
               void start()
             }}
           >
-            <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="What needs doing?" aria-label="New task" />
+            <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} placeholder="What needs doing?" aria-label="New task" />
             <button type="button" className={`icon-btn mic ${voice.state !== 'idle' ? 'mic-on' : ''}`} onClick={() => window.pai.toggleVoice()} aria-label="Say a task" title="Say a task">
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
                 <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
@@ -214,6 +239,16 @@ export function FloatApp() {
               </svg>
             </button>
           </form>
+          {suggestions.length > 0 && (
+            <div className="mini-ideas" aria-label="Suggestions">
+              {suggestions.map((s) => (
+                <button key={s.text} className="chip-suggestion" title={s.text} onClick={() => (s.send ? start(s.text) : setDraft(s.text))}>
+                  <span className="chip-text">{s.label}</span>
+                  {!s.send && <span className="chip-edit">✎</span>}
+                </button>
+              ))}
+            </div>
+          )}
           {error && <p className="mini-error">{error}</p>}
           <div className="mini-list">
             {active.length === 0 && recent.length === 0 && <p className="mini-empty">Type or say a task. It runs in the background and shows here.</p>}
