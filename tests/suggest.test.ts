@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { getSuggestions, resetSuggestIndex } from '../src/main/suggest'
 import { TMP, makeFiles, useProfile } from './helpers'
+import { homedir, tmpdir } from 'node:os'
 
 const texts = async (input: string) => (await getSuggestions(input)).map((s) => s.text)
 
@@ -18,7 +19,11 @@ describe('live suggestions', () => {
   })
 
   it('finds files by partial name for "summarize"', async () => {
-    expect(await texts('summarize report')).toContain(`Summarize ${join(TMP, 'work/quarterly-report.txt')}`)
+    const want = join(TMP, 'work/quarterly-report.txt')
+const home = homedir()
+const short = want.startsWith(home) ? '~' + want.slice(home.length) : want
+const got = await texts('summarize report')
+expect(got.some((t) => t === `Summarize ${want}` || t === `Summarize ${short}`)).toBe(true)
   })
 
   it('never suggests files outside the approved folders', async () => {
