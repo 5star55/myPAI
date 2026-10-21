@@ -226,7 +226,7 @@ export async function composeAction(): Promise<void> {
     const { bundleId, name } = s.field.app
     profileStore.update((p) => ({ ...p, compose: { ...p.compose, apps: [...p.compose.apps.filter((a) => a.id !== bundleId), { id: bundleId, name }] } }))
     broadcast('data:changed', { what: 'profile' })
-    if (!(s.field.before ?? '').trim()) return show({ state: 'error', app: name, message: 'Allowed. Type a few words, then press ${hotkeyLabel} to finish them.' })
+    if (!(s.field.before ?? '').trim()) return show({ state: 'error', app: name, message: `Allowed. Type a few words, then press ${hotkeyLabel} to finish them.` })
     return generate()
   }
   cancelCompose()
