@@ -56,6 +56,62 @@ export function StepRow({ step }: { step: ToolStep }) {
   )
 }
 
+const COLLAPSE_OVER = 3
+
+/**
+ * A finished run's steps. Long lists fold into one line ("Used 6 steps") so the
+ * answer stays in view; problems (denied, failed) are always shown.
+ */
+export function StepList({ steps }: { steps: ToolStep[] }) {
+  const [open, setOpen] = useState(false)
+  if (steps.length === 0) return null
+  const problems = steps.filter((s) => s.status !== 'ok').length
+  if (steps.length <= COLLAPSE_OVER || open) {
+    return (
+      <div className="acts">
+        {steps.map((s, i) => (
+          <StepRow key={i} step={s} />
+        ))}
+        {open && (
+          <button className="link-btn act-more act-fold" onClick={() => setOpen(false)}>
+            Hide steps
+          </button>
+        )}
+      </div>
+    )
+  }
+  return (
+    <button className="acts-summary" onClick={() => setOpen(true)} aria-expanded={false}>
+      <span className="act-dot" aria-hidden>
+        ⏺
+      </span>
+      Used {steps.length} steps{problems ? ` · ${problems} didn't go through` : ''}
+      <span className="acts-chevron" aria-hidden>
+        ▸
+      </span>
+    </button>
+  )
+}
+
+/** Copy text to the clipboard, with a short "Copied" confirmation. */
+export function CopyButton({ text, className = '' }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard unavailable: the text can still be selected */
+    }
+  }
+  return (
+    <button type="button" className={`msg-action ${className}`} onClick={() => void copy()} title="Copy">
+      {copied ? '✓ Copied' : 'Copy'}
+    </button>
+  )
+}
+
 /** The step that is running right now. */
 export function LiveStep({ tool, target }: { tool: string; target: string }) {
   return (

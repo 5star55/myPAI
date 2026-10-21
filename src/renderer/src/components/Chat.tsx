@@ -21,7 +21,7 @@ import { usePaiEvent } from '../hooks'
 import { handsFree } from '../voice/handsFree'
 import { Orb } from './Orb'
 import { RichText } from './RichText'
-import { LiveStep, StepRow, WorkingLine } from './Activity'
+import { CopyButton, LiveStep, StepList, StepRow, WorkingLine } from './Activity'
 import { toolLabel } from '../toolLabels'
 
 interface Message extends ChatTurn {
@@ -101,9 +101,27 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
   const busyRef = useRef(false)
   const [busySince, setBusySince] = useState(0)
 
-  // Keep the newest message in view.
+  // Follow new text only while you're at the bottom; scrolled up to read, you stay put.
+  const [atBottom, setAtBottom] = useState(true)
+  const atBottomRef = useRef(true)
+  function onListScroll() {
+    const el = listRef.current
+    if (!el) return
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    atBottomRef.current = near
+    setAtBottom(near)
+  }
+  function scrollToLatest(smooth = true) {
+    const el = listRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    atBottomRef.current = true
+    setAtBottom(true)
+  }
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
+    // Streaming text arrives many times a second: jump instantly (smooth scrolling lags behind it).
+    if (atBottomRef.current) scrollToLatest(!liveText)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, busy, error, liveSteps, live, liveText])
 
   // Grow the textarea with its content (up to a limit set in CSS).
@@ -286,7 +304,18 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     const history = [...messagesRef.current, { id: nextId++, role: 'user' as const, content, at: new Date().toISOString() }]
     setMessages(history)
     setDraft('')
+    scrollToLatest() // your own message always brings you to the bottom
     return requestReply(history)
+  }
+
+  /** Ask again for a different answer to the last message. */
+  function regenerate() {
+    const all = messagesRef.current
+    if (busyRef.current || all.at(-1)?.role !== 'assistant') return
+    const history = all.slice(0, -1)
+    setMessages(history)
+    scrollToLatest()
+    void requestReply(history)
   }
 
 
@@ -401,6 +430,9 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
 
   const tooLong = draft.length > CHAT_LIMITS.maxMessageChars
   const empty = messages.length === 0
+  const firstAsk = messages.find((m) => m.role === 'user')?.content.replace(/\s+/g, ' ').trim() ?? ''
+  const chatTitle = firstAsk ? (firstAsk.length > 60 ? `${firstAsk.slice(0, 59)}…` : firstAsk) : 'New chat'
+  const lastId = messages.at(-1)?.id
 
   return (
     <div className="chat-wrap">
@@ -415,16 +447,24 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
       )}
     <main className="chat">
       <div className="chat-toolbar">
-        <button className="icon-mini" onClick={toggleHistory} title={historyOpen ? 'Hide chats' : 'Show chats'} aria-pressed={historyOpen}>
-          ☰
+        <button className="icon-mini" onClick={toggleHistory} title={historyOpen ? 'Hide chats' : 'Show chats'} aria-pressed={historyOpen} aria-label="Saved chats">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+            <path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
         </button>
-        {!historyOpen && (
-          <button className="link-btn" onClick={newChat}>
-            + New chat
+        <span className="chat-title" title={chatTitle}>
+          {chatTitle}
+        </span>
+        {!historyOpen && !empty && (
+          <button className="toolbar-btn" onClick={newChat} disabled={busy}>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
+              <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+            New chat
           </button>
         )}
       </div>
-      <div className="chat-list" ref={listRef} aria-live="polite">
+      <div className="chat-list" ref={listRef} onScroll={onListScroll} aria-live="polite">
         {empty && (
           <div className="chat-empty">
             <Orb busy={busy} />
@@ -446,14 +486,21 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
           <div key={m.id} className={`msg msg-${m.role} ${m.failed ? 'msg-failed' : ''}`}>
             {m.role === 'assistant' && <span className="avatar" aria-hidden />}
             <div className="msg-body">
-              {m.steps && m.steps.length > 0 && (
-                <div className="acts">
-                  {m.steps.map((s, i) => (
-                    <StepRow key={i} step={s} />
-                  ))}
+              {m.steps && <StepList steps={m.steps} />}
+              <div className="bubble">{m.role === 'assistant' ? <RichText text={m.content} /> : m.content}</div>
+              {m.role === 'assistant' && (
+                <div className="msg-actions">
+                  <CopyButton text={m.content} />
+                  <button type="button" className="msg-action" onClick={() => speak(m.content)} title="Read aloud">
+                    Read aloud
+                  </button>
+                  {m.id === lastId && enabled && !busy && (
+                    <button type="button" className="msg-action" onClick={regenerate} title="Ask again for a different answer">
+                      Regenerate
+                    </button>
+                  )}
                 </div>
               )}
-              <div className="bubble">{m.role === 'assistant' ? <RichText text={m.content} /> : m.content}</div>
               {m.failed && (
                 <div className="msg-note">
                   {m.failed === 'stopped' ? 'Stopped · not sent again' : 'Failed · not sent again'}
@@ -501,6 +548,12 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
           </div>
         )}
       </div>
+
+      {!atBottom && !empty && (
+        <button className="jump-latest" onClick={() => scrollToLatest()}>
+          ↓ {busy ? 'Follow the reply' : 'Jump to latest'}
+        </button>
+      )}
 
       {/* Live suggestions (hidden on the empty screen, which shows its own). */}
       {suggestions.length > 0 && !busy && (!empty || draft.trim() || voice.state === 'recording') && (

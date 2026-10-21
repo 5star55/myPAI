@@ -657,6 +657,103 @@ button:focus-visible {
   max-width: 100%;
 }
 
+/* Replies use the full width (code and lists need the room); short ones still hug their text. */
+.msg-assistant .msg-body {
+  flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 36px);
+  align-items: flex-start;
+}
+
+.msg-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.msg:hover .msg-actions,
+.msg-actions:focus-within,
+.task-result:hover .msg-actions {
+  opacity: 1;
+}
+
+.msg-action {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: 500 11.5px var(--font);
+  cursor: pointer;
+}
+
+.msg-action:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.task-result-actions {
+  margin: 8px 0 0 -6px;
+}
+
+/* "⏺ Used 6 steps ▸": a finished run's steps, folded */
+.acts-summary {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(8, 11, 28, 0.5);
+  color: var(--text-dim);
+  font: 12px var(--mono);
+  cursor: pointer;
+}
+
+.acts-summary:hover {
+  color: var(--text);
+  border-color: rgba(56, 225, 255, 0.35);
+}
+
+.acts-summary .act-dot {
+  color: var(--ok);
+  font-size: 10px;
+}
+
+.acts-chevron {
+  font-size: 10px;
+}
+
+.act-fold {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* Floats over the bottom of the list while you're scrolled up. */
+.jump-latest {
+  align-self: center;
+  position: relative;
+  z-index: 3;
+  margin: -44px 0 12px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(56, 225, 255, 0.4);
+  background: rgba(10, 14, 34, 0.94);
+  color: var(--accent);
+  font: 600 12.5px var(--font);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: rise 0.2s ease;
+}
+
+.jump-latest:hover {
+  background: rgba(20, 28, 60, 0.96);
+}
+
 .steps {
   display: flex;
   flex-direction: column;
@@ -912,8 +1009,13 @@ button:focus-visible {
   background: none;
   color: var(--accent);
   font: inherit;
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .rec-pill {
@@ -1358,8 +1460,48 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 30px;
-  padding: 0 4px;
+  min-height: 44px;
+  padding: 8px 4px;
+  border-bottom: 1px solid rgba(120, 160, 255, 0.08);
+}
+
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.toolbar-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  border-color: rgba(56, 225, 255, 0.45);
+  background: rgba(56, 225, 255, 0.06);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .icon-mini {

@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Task } from '@shared/ipc'
 import { elapsed, isActiveTask } from '../tasks'
 import { toolLabel } from '../toolLabels'
-import { LiveStep, StepRow } from './Activity'
+import { CopyButton, LiveStep, StepList, StepRow } from './Activity'
 import { MiniOrb } from './MiniOrb'
 import { RichText } from './RichText'
 
@@ -105,12 +105,17 @@ export function TaskCard({ task, compact = false, defaultOpen }: { task: Task; c
               )}
             </div>
           )}
-          {task.steps.length > 0 && (
-            <div className="acts">
-              {task.steps.map((s, i) => (
-                <StepRow key={i} step={s} />
-              ))}
-            </div>
+          {/* While it works you see every step; once finished, long lists fold into one line. */}
+          {active ? (
+            task.steps.length > 0 && (
+              <div className="acts">
+                {task.steps.map((s, i) => (
+                  <StepRow key={i} step={s} />
+                ))}
+              </div>
+            )
+          ) : (
+            <StepList steps={task.steps} />
           )}
           {task.live && <LiveStep tool={task.live.tool} target={task.live.target} />}
           {task.status === 'needs-you' && <div className="task-needs">Waiting for your OK in the permission dialog.</div>}
@@ -122,6 +127,11 @@ export function TaskCard({ task, compact = false, defaultOpen }: { task: Task; c
           {task.result && (
             <div className="task-result">
               <RichText text={task.result} />
+              {!active && (
+                <div className="msg-actions task-result-actions">
+                  <CopyButton text={task.result} />
+                </div>
+              )}
             </div>
           )}
           {task.error && <div className="task-error">{task.error}</div>}
