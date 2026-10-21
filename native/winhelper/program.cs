@@ -11,6 +11,7 @@ using System.Windows.Automation.Text;
 static class Program
 {
     static int lastPid = 0;
+        static IntPtr lastHwnd = IntPtr.Zero;
 
     static void Main(string[] args)
     {
@@ -65,14 +66,15 @@ static class Program
     static JsonObject RectJson(System.Windows.Rect r) =>
         new JsonObject { ["x"] = r.X, ["y"] = r.Y, ["w"] = r.Width, ["h"] = r.Height };
 
-    static JsonObject Read()
+        static JsonObject Read()
     {
         AutomationElement? el = null;
-        try { el = AutomationElement.FocusedElement; } catch { }
+        try { el = AutomationElement.FocusedElement; } catch (Exception e) { Console.Error.WriteLine("[read] focus: " + e.Message); }
         if (el == null) return Fail("no-focus");
 
         var info = el.Current;
         lastPid = info.ProcessId;
+        lastHwnd = GetForegroundWindow();
         string name = "unknown";
         try { name = Process.GetProcessById(info.ProcessId).ProcessName; } catch { }
 
@@ -88,35 +90,51 @@ static class Program
         string before = "", after = "";
         bool selected = false;
         JsonObject? caret = null;
+        string? problem = null;
 
-        if (el.TryGetCurrentPattern(TextPattern.Pattern, out var tpObj))
+        try
         {
-            var tp = (TextPattern)tpObj;
-            var sels = tp.GetSelection();
-            if (sels.Length == 0) { res["ok"] = false; res["error"] = "no-text"; return res; }
-            var sel = sels[0];
-            selected = sel.GetText(1).Length > 0;
+            if (el.TryGetCurrentPattern(TextPattern.Pattern, out var tpObj))
+            {
+              if (name.Equals("chrome", StringComparison.OrdinalIgnoreCase) || name.Equals("msedge", StringComparison.OrdinalIgnoreCase)) { res["ok"] = false; res["error"] = "no-text"; return res; }
+                var tp = (TextPattern)tpObj;
+                var sels = tp.GetSelection();
+                if (sels.Length == 0) problem = "no-text";
+                else
+                {
+                    var sel = sels[0];
+                    selected = sel.GetText(1).Length > 0;
 
-            var head = sel.Clone();
-            head.MoveEndpointByRange(TextPatternRangeEndpoint.End, sel, TextPatternRangeEndpoint.Start);
-            head.MoveEndpointByUnit(TextPatternRangeEndpoint.Start, TextUnit.Character, -2000);
-            before = head.GetText(2000);
+                    var head = sel.Clone();
+                    head.MoveEndpointByRange(TextPatternRangeEndpoint.End, sel, TextPatternRangeEndpoint.Start);
+                    head.MoveEndpointByUnit(TextPatternRangeEndpoint.Start, TextUnit.Character, -2000);
+                    before = head.GetText(2000);
 
-            var tail = sel.Clone();
-            tail.MoveEndpointByRange(TextPatternRangeEndpoint.Start, sel, TextPatternRangeEndpoint.End);
-            tail.MoveEndpointByUnit(TextPatternRangeEndpoint.End, TextUnit.Character, 400);
-            after = tail.GetText(400);
+                    var tail = sel.Clone();
+                    tail.MoveEndpointByRange(TextPatternRangeEndpoint.Start, sel, TextPatternRangeEndpoint.End);
+                    tail.MoveEndpointByUnit(TextPatternRangeEndpoint.End, TextUnit.Character, 400);
+                    after = tail.GetText(400);
 
-            var rects = sel.GetBoundingRectangles();
-            if (rects.Length > 0 && !rects[0].IsEmpty) caret = RectJson(rects[0]);
+                    var rects = sel.GetBoundingRectangles();
+                    if (rects.Length > 0 && !rects[0].IsEmpty) caret = RectJson(rects[0]);
+                }
+            }
+            else if (el.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj))
+            {
+                // Simple boxes: whole text, caret assumed at the end.
+                var v = ((ValuePattern)vpObj).Current.Value ?? "";
+                before = v.Length > 2000 ? v[^2000..] : v;
+            }
+            else problem = "no-text";
         }
-        else if (el.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj))
+        catch (Exception e)
         {
-            // Simple boxes: we get the whole text but not the caret position (assumed at the end).
-            var v = ((ValuePattern)vpObj).Current.Value ?? "";
-            before = v.Length > 2000 ? v[^2000..] : v;
+            // Chrome/Edge web boxes (Gmail etc.) often throw here. Say so, don't crash.
+            Console.Error.WriteLine("[read] text pattern failed: " + e.Message);
+            problem = "no-text";
         }
-        else { res["ok"] = false; res["error"] = "no-text"; return res; }
+
+        if (problem != null) { res["ok"] = false; res["error"] = problem; return res; }
 
         res["ok"] = true;
         res["before"] = before;
@@ -125,19 +143,31 @@ static class Program
         if (caret != null) res["caret"] = caret;
         return res;
     }
-
     static JsonObject Insert(string text)
     {
         if (lastPid == 0) return Fail("no-field");
-        var hwnd = GetForegroundWindow();
+            var hwnd = GetForegroundWindow();
         GetWindowThreadProcessId(hwnd, out uint fgPid);
-       if (fgPid != (uint)lastPid)
-{
-    string fg = "?";
-    try { fg = Process.GetProcessById((int)fgPid).ProcessName; } catch { }
-    Console.Error.WriteLine($"[insert] foreground={fg} (pid {fgPid}), expected pid {lastPid}");
-    return Fail("app-changed");
-}
+               if (fgPid != (uint)lastPid)
+        {
+            // The popup probably took focus. Borrow the foreground thread's input rights
+            // so Windows lets us hand focus back to the app the user was typing in.
+            uint fgThread = GetWindowThreadProcessId(hwnd, out _);
+            uint me = GetCurrentThreadId();
+            AttachThreadInput(me, fgThread, true);
+            SetForegroundWindow(lastHwnd);
+            AttachThreadInput(me, fgThread, false);
+            Thread.Sleep(200);
+            hwnd = GetForegroundWindow();
+            GetWindowThreadProcessId(hwnd, out fgPid);
+            if (fgPid != (uint)lastPid)
+            {
+                string fg = "?";
+                try { fg = Process.GetProcessById((int)fgPid).ProcessName; } catch { }
+                Console.Error.WriteLine($"[insert] foreground={fg} (pid {fgPid}), expected pid {lastPid}");
+                return Fail("app-changed");
+            }
+        }
 
         var inputs = new List<INPUT>();
         foreach (var ch in text.Replace("\r", "").Replace("\n", " "))
@@ -170,4 +200,7 @@ static class Program
     [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] inputs, int size);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
 }

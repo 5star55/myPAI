@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pickPlatform } from '../src/main/platform'
+import { isNeverComposeApp } from '../src/shared/compose'
 
 describe('platform layer', () => {
   it('picks the right system', () => {
@@ -10,13 +11,26 @@ describe('platform layer', () => {
 
   it('says what each system supports', () => {
     expect(pickPlatform('darwin').supports.completeText).toBe(true)
-    expect(pickPlatform('win32').supports.completeText).toBe(false)
+    expect(pickPlatform('win32').supports.completeText).toBe(true)
+    expect(pickPlatform('linux').supports.completeText).toBe(false)
+  })
+
+  it('Windows does not use Alt+Space (it opens the window menu)', () => {
+    expect(pickPlatform('darwin').composeHotkey.accelerator).toBe('Alt+Space')
+    expect(pickPlatform('win32').composeHotkey.accelerator).not.toBe('Alt+Space')
   })
 
   it('unsupported systems fail cleanly instead of throwing', async () => {
-    const p = pickPlatform('win32')
+    const p = pickPlatform('linux')
     expect(p.text.available()).toBe(false)
     expect(await p.text.readField()).toMatchObject({ ok: false })
     expect(p.text.unavailableMessage()).toContain('macOS')
+  })
+
+  it('never reads terminals or password managers, whatever the capitalisation', () => {
+    for (const id of ['WindowsTerminal.exe', 'powershell.exe', 'KeePass.exe', '1Password.exe', 'com.apple.Terminal']) {
+      expect(isNeverComposeApp(id)).toBe(true)
+    }
+    expect(isNeverComposeApp('notepad.exe')).toBe(false)
   })
 })

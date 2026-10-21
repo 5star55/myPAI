@@ -1,6 +1,8 @@
 /**
- * helper.ts — talks to native/bin/pai-axhelper (see native/axhelper/main.swift),
- * which reads the focused text box in another app and inserts text into it.
+ * helper.ts — talks to the native text helper, which reads the focused text box
+ * in another app and inserts text into it:
+ *   macOS    native/bin/pai-axhelper        (native/axhelper/main.swift, Accessibility API)
+ *   Windows  native/bin/pai-winhelper.exe   (native/winhelper/program.cs, UI Automation)
  *
  * Started on first use and kept running; one JSON line per request. It gets a
  * bare environment (no API keys).
@@ -23,6 +25,7 @@ export interface FieldInfo {
   ok: boolean
   /** not-trusted | no-app | no-focus | no-text | secure | helper-missing | helper-failed */
   error?: string
+  /** On macOS bundleId is the bundle id; on Windows it is the lowercase program name ("notepad.exe"). */
   app?: { name: string; bundleId: string; pid: number }
   role?: string
   /** Text before the caret (up to 2000 characters) and after the selection (up to 400). */
@@ -40,8 +43,28 @@ export interface HelperReply {
   method?: 'ax' | 'keys'
 }
 
-export const helperPath = (): string => join(app.getAppPath(), 'native/bin/pai-axhelper')
-export const helperAvailable = (): boolean => process.platform === 'darwin' && existsSync(helperPath())
+export const helperPath = (): string =>
+  join(app.getAppPath(), process.platform === 'win32' ? 'native/bin/pai-winhelper.exe' : 'native/bin/pai-axhelper')
+
+export const helperAvailable = (): boolean =>
+  (process.platform === 'darwin' || process.platform === 'win32') && existsSync(helperPath())
+
+/** Only what Windows and .NET need to start a program. Nothing else (no API keys) is passed on. */
+const WIN_ENV = [
+  'SystemRoot', 'windir', 'SystemDrive', 'PATH', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
+  'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'ProgramData', 'ALLUSERSPROFILE', 'COMSPEC',
+  'DOTNET_ROOT', 'USERNAME', 'USERDOMAIN', 'COMPUTERNAME', 'PROCESSOR_ARCHITECTURE', 'OS'
+]
+
+function helperEnv(): NodeJS.ProcessEnv {
+  if (process.platform !== 'win32') return { PATH: '/usr/bin:/bin' }
+  const env: NodeJS.ProcessEnv = {}
+  for (const k of WIN_ENV) {
+    const v = process.env[k]
+    if (v !== undefined) env[k] = v
+  }
+  return env
+}
 
 let proc: ChildProcessWithoutNullStreams | null = null
 let nextId = 1
@@ -55,7 +78,7 @@ function failAll(error: string): void {
 function ensure(): ChildProcessWithoutNullStreams | null {
   if (proc && proc.exitCode === null) return proc
   if (!helperAvailable()) return null
-  const child = spawn(helperPath(), [], { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: '/usr/bin:/bin' } })
+  const child = spawn(helperPath(), [], { stdio: ['pipe', 'pipe', 'pipe'], env: helperEnv(), windowsHide: true })
   createInterface({ input: child.stdout }).on('line', (line) => {
     let msg: Record<string, unknown>
     try {

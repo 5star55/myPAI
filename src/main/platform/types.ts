@@ -21,5 +21,7 @@ export interface Platform {
   id: PlatformId
   /** What works on this system. Features check this and hide themselves when false. */
   supports: { completeText: boolean }
+  /** Global hotkey for "Complete my text": the Electron accelerator and how to show it to people. */
+  composeHotkey: { accelerator: string; label: string }
   text: TextAccess
 }

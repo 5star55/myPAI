@@ -334,8 +334,7 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
   }, [])
 
   const local = isLocalModel(config)
-  const unavailable = !isMac || access?.available === false
-
+ const unavailable = access?.available === false
   return (
     <Page title="Writing" sub={`Let ${name} help finish what you're typing in other apps, like an email or a message.`}>
       <Card>

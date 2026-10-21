@@ -38,6 +38,7 @@ function create(): BrowserWindow {
     fullscreenable: false,
     skipTaskbar: true,
     hasShadow: false,
+     focusable: process.platform !== 'win32', // Windows: never take focus, so the app you're typing in stays active
     alwaysOnTop: true,
     // macOS: a non-activating panel; it can take the keyboard while the other app stays active.
     ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
@@ -68,12 +69,15 @@ export function showCompose(view: ComposeView, anchor: Anchor | null, blur: () =
   onBlur = blur
   const w = getComposeWindow() ?? create()
   if (anchor) w.setPosition(place(anchor).x, place(anchor).y)
-  const send = (): void => {
+   const send = (): void => {
     w.webContents.send('compose:view', view)
     if (!w.isVisible()) {
       w.showInactive()
-      w.setFocusable(true)
-      w.focus() // takes the keyboard; as a panel, the other app stays active
+      if (process.platform !== 'win32') {
+        // Mac and Linux keep the keyboard (1-3, Enter, Esc).
+        w.setFocusable(true)
+        w.focus()
+      }
     }
   }
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
