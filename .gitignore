@@ -10,3 +10,5 @@ native/bin/
 # Local user data written by the app at runtime
 userdata/
 .DS_Store
+native/winhelper/bin/
+native/winhelper/obj/
