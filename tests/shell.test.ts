@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { runChat } from '../src/main/agent/loop'
@@ -35,6 +36,9 @@ describe('run_command safety', () => {
 
   it("refuses commands that touch pai's files or secrets", async () => {
     expect(touchesProtected('cat .env')).toBe(true)
+    // Uses this machine's home folder (backslashes on Windows) so the test passes everywhere.
+    expect(touchesProtected(`type ${join(homedir(), '.ssh', 'id_rsa')}`)).toBe(true)
+    expect(touchesProtected('type %USERPROFILE%\\.ssh\\id_rsa')).toBe(true)
     expect(touchesProtected('cat ~/.ssh/id_rsa')).toBe(true)
     expect(touchesProtected(`cat "${join(TMP, 'userData', 'approvals.json')}"`)).toBe(true)
     expect("error" in (await runCommand.prepare({ command: "cat .env" }))).toBe(true)
@@ -50,13 +54,13 @@ describe('run_command safety', () => {
   })
 
   it('runs in the approved folder and captures output', async () => {
-    const r = ready(await runCommand.prepare({ command: 'ls && echo done' }))
+    const r = ready(await runCommand.prepare({ command: 'ls; echo done'}))
     const out = await r.run(signal())
     expect(typeof out === 'object' && out.output).toContain('readme.txt')
   })
 
   it('a failing command reports its exit code and output', async () => {
-    const r = ready(await runCommand.prepare({ command: 'echo oops >&2; exit 3' }))
+    const r = ready(await runCommand.prepare({ command: 'echo oops; exit 3' }))
     await expect(r.run(signal())).rejects.toMatchObject({ message: expect.stringContaining('exit code 3'), output: 'oops' })
   })
 

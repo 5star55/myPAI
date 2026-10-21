@@ -50,12 +50,13 @@ export function riskOf(command: string): string | null {
 
 /** Commands may never touch pai's own data/code or common secret stores. */
 export function touchesProtected(command: string): boolean {
-  const lower = command.toLowerCase()
-  const home = homedir().toLowerCase()
-  const paths = [dataDir(), app.getAppPath()].map((p) => p.toLowerCase())
+  const norm = (s: string) => s.toLowerCase().replace(/\\/g, '/')
+  const lower = norm(command)
+  const home = norm(homedir())
+  const paths = [dataDir(), app.getAppPath()].map(norm)
   if (paths.some((p) => lower.includes(p))) return true
   if (/(^|[\s'"/])\.env\b/.test(lower)) return true
-  if (/(~|\$home|\$\{home\})\/\.(ssh|gnupg|aws)\b|keychains/.test(lower) || [`${home}/.ssh`, `${home}/.gnupg`, `${home}/.aws`].some((p) => lower.includes(p))) return true
+  if (/(~|\$home|\$\{home\}|\$env:(userprofile|home)|%userprofile%)\/\.(ssh|gnupg|aws)\b|keychains/.test(lower) || [`${home}/.ssh`, `${home}/.gnupg`, `${home}/.aws`].some((p) => lower.includes(p))) return true
   if (/\bsecurity\s+(find|dump|export)-/.test(lower)) return true // macOS keychain reading
   return false
 }
