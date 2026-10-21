@@ -6,7 +6,9 @@
  * When the panel is closed it still shows proactive offers and the voice status as a card.
  */
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent } from 'react'
+import { looksLikeChat } from '@shared/intent'
 import type { AppState, FloatSize, Offer, Suggestion, VoiceStatus } from '@shared/ipc'
+import { ChatNudge } from './components/ChatNudge'
 import { TaskCard } from './components/TaskCard'
 import { usePaiEvent } from './hooks'
 import { isActiveTask, useTasks } from './tasks'
@@ -30,6 +32,8 @@ export function FloatApp() {
   // Reminders that went off and haven't been dismissed yet (oldest first).
   const [reminders, setReminders] = useState<{ id: string; message: string }[]>([])
   const [draft, setDraft] = useState('')
+  /** A question typed into the panel: offer to ask it in the chat instead. */
+  const [nudge, setNudge] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const tasks = useTasks()
@@ -118,14 +122,24 @@ export function FloatApp() {
     }
   }, [draft, panel, state.enabled, tasks.length])
 
-  async function start(text = draft) {
+  async function start(text = draft, asTask = false) {
     const prompt = text.trim()
     if (!prompt) return
     setError(null)
+    if (!asTask && looksLikeChat(prompt)) return setNudge(prompt)
+    setNudge(null)
     const res = await window.pai.startTask(prompt, 'orb')
     if (res.ok) setDraft('')
     else setError(res.error)
     inputRef.current?.focus()
+  }
+
+  async function askInChat(text: string) {
+    setNudge(null)
+    const res = await window.pai.askInChat(text)
+    if (!res.ok) return setError(res.error)
+    setDraft('')
+    setPanel(false)
   }
 
   /** Tab takes the first suggestion. */
@@ -226,7 +240,14 @@ export function FloatApp() {
               void start()
             }}
           >
-            <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKeyDown} placeholder="What needs doing?" aria-label="New task" />
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                setNudge(null)
+              }}
+              onKeyDown={onKeyDown} placeholder="What needs doing?" aria-label="New task" />
             <button type="button" className={`icon-btn mic ${voice.state !== 'idle' ? 'mic-on' : ''}`} onClick={() => window.pai.toggleVoice()} aria-label="Say a task" title="Say a task">
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
                 <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
@@ -242,13 +263,14 @@ export function FloatApp() {
           {suggestions.length > 0 && (
             <div className="mini-ideas" aria-label="Suggestions">
               {suggestions.map((s) => (
-                <button key={s.text} className="chip-suggestion" title={s.text} onClick={() => (s.send ? start(s.text) : setDraft(s.text))}>
+                <button key={s.text} className="chip-suggestion" title={s.text} onClick={() => (s.send ? start(s.text, true) : setDraft(s.text))}>
                   <span className="chip-text">{s.label}</span>
                   {!s.send && <span className="chip-edit">✎</span>}
                 </button>
               ))}
             </div>
           )}
+          {nudge && <ChatNudge compact onChat={() => void askInChat(nudge)} onTask={() => void start(nudge, true)} />}
           {error && <p className="mini-error">{error}</p>}
           <div className="mini-list">
             {active.length === 0 && recent.length === 0 && <p className="mini-empty">Type or say a task. It runs in the background and shows here.</p>}

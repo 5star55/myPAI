@@ -36,6 +36,22 @@ function jsonBlocks(text: string): { start: number; end: number; json: string }[
   return out
 }
 
+/** JSON.parse, forgiving the shell-style \' escapes models write inside strings (not valid JSON). */
+function parseLoose(json: string): unknown {
+  try {
+    return JSON.parse(json)
+  } catch {
+    try {
+      return JSON.parse(json.replace(/\\'/g, "'"))
+    } catch {
+      return undefined
+    }
+  }
+}
+
+/** Still broken after repair, but clearly a tool call: {"name": "...", "parameters"|"arguments": ...}. */
+const CALL_LIKE = /^\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(parameters|arguments)"\s*:/
+
 interface CallShape {
   name?: unknown
   parameters?: unknown
@@ -56,12 +72,8 @@ export function extractTextToolCalls(text: string, toolNames: string[]): { calls
   const calls: TextToolCall[] = []
   let rest = text
   for (const block of jsonBlocks(text).reverse()) {
-    let obj: unknown
-    try {
-      obj = JSON.parse(block.json)
-    } catch {
-      continue
-    }
+    const obj = parseLoose(block.json)
+    if (obj === undefined) continue
     const o = obj as CallShape
     const name = typeof o.name === 'string' ? o.name : typeof o.function?.name === 'string' ? o.function.name : null
     if (!name || !toolNames.includes(name)) continue
@@ -85,13 +97,9 @@ export function findStrayToolCalls(text: string): { names: string[]; rest: strin
   const names: string[] = []
   let rest = text
   for (const block of jsonBlocks(text).reverse()) {
-    let obj: unknown
-    try {
-      obj = JSON.parse(block.json)
-    } catch {
-      continue
-    }
-    const name = callName(obj)
+    const obj = parseLoose(block.json)
+    // Unreadable but tool-call shaped: still never show it as the answer.
+    const name = obj === undefined ? (CALL_LIKE.test(block.json) ? (/"name"\s*:\s*"([^"]+)"/.exec(block.json)?.[1] ?? null) : null) : callName(obj)
     if (!name) continue
     names.unshift(name)
     rest = rest.slice(0, block.start) + rest.slice(block.end)

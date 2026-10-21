@@ -92,6 +92,17 @@ export function openEcospace(): void {
   else send()
 }
 
+/** Show the main window on the chat and send this message there. */
+export function askInChat(text: string): void {
+  const win = showChat()
+  const send = (): void => {
+    win.webContents.send('ui:navigate', { tab: 'chat' })
+    win.webContents.send('chat:prefill', { text })
+  }
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+}
+
 /** Show the main window on a Settings section (e.g. "writing"). */
 export function openSettings(section: string): void {
   const win = showChat()
@@ -251,6 +262,10 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.taskDelete, 'chat', (id) => ok(deleteTask(id)))
   handle(IPC.taskClearFinished, 'chat', () => ok(clearFinishedTasks()))
   handle(IPC.openEcospace, 'any', () => ok(openEcospace()))
+  handle(IPC.askInChat, 'any', (text) => {
+    if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Nothing to ask.' }
+    return ok(askInChat(text.trim().slice(0, 4000)))
+  })
   // Natural voice (local Kokoro) and the OS voice settings page.
   handle(IPC.ttsSynthesize, 'chat', (text, voice, rate) => synthesize(text, voice, rate))
   handle(IPC.ttsWarmUp, 'chat', () => ok(warmUpTts()))
