@@ -111,6 +111,8 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     const el = inputRef.current
     if (!el) return
     el.style.height = 'auto'
+    // The chat stays mounted while another tab is shown; hidden, it measures 0. Keep the natural height.
+    if (el.scrollHeight === 0) return
     el.style.height = `${el.scrollHeight}px`
   }, [draft])
 

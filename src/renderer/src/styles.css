@@ -421,6 +421,7 @@ body {
 
 .composer textarea {
   flex: 1;
+  min-height: calc(14.5px * 1.5 + 16px); /* one line + padding, never squashed */
   max-height: 180px;
   padding: 8px 0;
   border: 0;
