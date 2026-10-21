@@ -203,6 +203,7 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
 
   function newChat() {
     if (busyRef.current) return
+    cancelEdit()
     recorderRef.current?.cancel()
     recorderRef.current = null
     stopSpeaking()
@@ -216,6 +217,7 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
 
   async function openChat(id: string) {
     if (busyRef.current || id === convIdRef.current) return
+    cancelEdit()
     const res = await window.pai.getConversation(id)
     if (!res.ok) return setError(res.error)
     stopSpeaking()
@@ -307,6 +309,59 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     scrollToLatest() // your own message always brings you to the bottom
     return requestReply(history)
   }
+
+  // Editing a message you already sent: everything after it is answered again.
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editText, setEditText] = useState('')
+  const editRef = useRef<HTMLTextAreaElement>(null)
+
+  function startEdit(m: Message) {
+    if (busyRef.current) return
+    setEditingId(m.id)
+    setEditText(m.content)
+    requestAnimationFrame(() => {
+      const el = editRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditText('')
+  }
+
+  /** Replace the message, drop the replies after it, and ask again from there. */
+  function saveEdit() {
+    const content = editText.trim()
+    const all = messagesRef.current
+    const at = all.findIndex((m) => m.id === editingId)
+    if (!content || at < 0 || busyRef.current || content.length > CHAT_LIMITS.maxMessageChars) return
+    const history = [...all.slice(0, at), { ...all[at], content, failed: undefined, at: new Date().toISOString() }]
+    cancelEdit()
+    setMessages(history)
+    scrollToLatest()
+    void requestReply(history)
+  }
+
+  function onEditKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelEdit()
+    } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      saveEdit()
+    }
+  }
+
+  // Grow the edit box with its content.
+  useEffect(() => {
+    const el = editRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editText, editingId])
 
   /** Ask again for a different answer to the last message. */
   function regenerate() {
@@ -487,7 +542,48 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
             {m.role === 'assistant' && <span className="avatar" aria-hidden />}
             <div className="msg-body">
               {m.steps && <StepList steps={m.steps} />}
-              <div className="bubble">{m.role === 'assistant' ? <RichText text={m.content} /> : m.content}</div>
+              {editingId === m.id ? (
+                <div className="msg-edit">
+                  <textarea
+                    ref={editRef}
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    onKeyDown={onEditKey}
+                    rows={1}
+                    aria-label="Edit your message"
+                  />
+                  <div className="msg-edit-bar">
+                    <span className="msg-edit-hint">
+                      {messages.at(-1)?.id === m.id ? 'Enter to send · Esc to cancel' : 'Replies after this message will be replaced · Esc to cancel'}
+                    </span>
+                    <button type="button" className="btn-ghost btn-sm" onClick={cancelEdit}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary btn-inline btn-sm"
+                      onClick={saveEdit}
+                      disabled={!editText.trim() || editText.trim() === m.content || editText.length > CHAT_LIMITS.maxMessageChars}
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bubble" onDoubleClick={() => m.role === 'user' && enabled && !busy && startEdit(m)}>
+                  {m.role === 'assistant' ? <RichText text={m.content} /> : m.content}
+                </div>
+              )}
+              {m.role === 'user' && editingId !== m.id && (
+                <div className="msg-actions">
+                  <CopyButton text={m.content} />
+                  {enabled && !busy && (
+                    <button type="button" className="msg-action" onClick={() => startEdit(m)} title="Edit and ask again (or double-click the message)">
+                      Edit
+                    </button>
+                  )}
+                </div>
+              )}
               {m.role === 'assistant' && (
                 <div className="msg-actions">
                   <CopyButton text={m.content} />
