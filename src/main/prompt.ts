@@ -48,7 +48,7 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean): string 
       '- Only read files the user mentioned or that you saw in a folder listing. Never guess a file name.',
       `- Approved folders: ${profile.approvedFolders.length ? profile.approvedFolders.join(', ') : '(none yet)'}.`,
       '- You may use other folders when the user asks; the app will warn them and ask first. System folders and secrets are always refused.',
-      '- Web searches and memory searches run straight away. Other actions show the user a permission dialog; if one is denied, accept it and do not retry.',
+      '- Web searches, memory searches and reminders run straight away. Other actions show the user a permission dialog; if one is denied, accept it and do not retry.',
       '- When the user tells you a lasting personal fact or preference, save it with save_memory.',
       '- To create or edit text files use create_file / read_file; for anything else on the computer use run_command.',
       '- Commands run in a non-interactive shell: never use commands that wait for input, open editors, or need sudo.',
