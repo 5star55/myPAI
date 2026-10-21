@@ -2,15 +2,23 @@
 
 A private personal AI assistant that runs on your PC, remembers you, and **asks permission before acting**.
 
-Electron + React + TypeScript. Works fully offline in mock mode, with a local model through Ollama, or in the cloud through Nebius Token Factory (NVIDIA Nemotron). You switch between them by editing `.env` only.
+Electron + React + TypeScript, for macOS and Windows. It runs on **NVIDIA Nemotron through Nebius Token Factory**, or fully on your own computer with a local model through Ollama (or offline in mock mode). You switch between them by editing `.env` only.
+
+**Highlights**
+
+- **NVIDIA Nemotron on Nebius Token Factory**: one `.env` switch moves the whole agent (chat, tool calling, tasks, *Complete my text*) to Nemotron. See [NVIDIA Nemotron and Nebius](#nvidia-nemotron-and-nebius).
+- **Private by default**: speech-to-text (Whisper) and text-to-speech run on your computer; with Ollama, so does the model.
+- **Asks before acting**: every file change, command and app launch goes through a permission dialog and a folder allowlist enforced in code.
+- **Open source** under the OSI-approved **MIT License**.
 
 ## Features
 
 | | |
 | --- | --- |
 | **Ecospace** (home screen) | Give tasks by typing or talking. Each runs in the background as a live card (steps, timer, *Needs you* when waiting for permission), up to 3 at once, and the rest queue. Finished tasks are saved with all their details. The floating orb opens a **mini Ecospace** |
-| **Chat** | Replies stream in live. Chat window plus a floating always-on-top orb (click: open/close, drag: move, right-click: menu) |
-| **Complete my text** | Writing an email or message in another app? Press **⌃⌥Space** (Ctrl+Alt+Space on Windows) and pick one of 3 ways to finish your sentence; it's typed in for you. Only in apps you allow, never in password fields (macOS) |
+| **Chat** | Replies stream in live, with code blocks (Copy button), Copy / Read aloud / Regenerate on every reply, and **Edit** on your own messages (the conversation is answered again from there). Chat window plus a floating always-on-top orb (click: mini Ecospace, drag: move, right-click: menu) |
+| **Chat or task?** | Type a question into the Ecospace and pai offers to ask it in Chat instead (a fast keyword check, no model call) |
+| **Complete my text** | Writing an email or message in another app? Press **⌃⌥Space** (Ctrl+Alt+Space on Windows) and pick one of 3 ways to finish your sentence; it's typed in for you. Only in apps you allow, never in password fields (macOS and Windows) |
 | **Live suggestions** | Chips appear while you type or speak: matching files in your approved folders, installed apps, reminder times, searches. Tab or click to use. Worked out locally in milliseconds, with no model call |
 | **Voice** | Mic button: your words appear **live in the message box** as you speak (transcribed on your computer by Whisper), and you can fix any word while the mic is on. Speaker button: replies are read aloud with your OS voices |
 | **Hands-free** | Press **⌘⇧Space** (Ctrl+Shift+Space) in any app, or say **“Hey [assistant name]”** (optional). You see your words live on the orb, get 2.5 s to *Send now* / *Edit*, then hear the answer. Safe actions can be approved by saying “yes” |
@@ -28,7 +36,7 @@ Electron + React + TypeScript. Works fully offline in mock mode, with a local mo
 
 ## Setup and run from source
 
-_Requirements: Node.js 20+ and npm._
+_Requirements: Node.js 20+ and npm. Optional, for *Complete my text*: Xcode command line tools on macOS (`xcode-select --install`), or the .NET 10 SDK on Windows. Without them the rest of the app works normally._
 
 ```bash
 npm install
@@ -40,7 +48,7 @@ npm start
 
 | Command | What it does |
 | --- | --- |
-| `npm start` | Build and run the app |
+| `npm start` | Build and run the app (also builds the native text helper for your system) |
 | `npm run dev` | Run with hot reload while you code |
 | `npm test` | Run the test suite (allowlist, permissions, tools, agent loop, proactive) |
 | `npm run typecheck` | TypeScript checks for all code |
@@ -58,7 +66,8 @@ All model settings live in `.env` and are read only by [`src/main/config.ts`](sr
 | `MODEL_API_KEY` | API key (any text for Ollama) |
 | `SMALL_MODEL` | Everyday chat |
 | `BIG_MODEL` | Tool calling |
-| `SMALL_MAX_TOKENS` / `BIG_MAX_TOKENS` | Reply length limits (set on every request) |
+| `SMALL_MAX_TOKENS` / `BIG_MAX_TOKENS` | Reply length limits (default 1024 / 1536). Replies cut off at the limit are continued automatically |
+| `MODEL_CONTEXT_TOKENS` | How much the model reads at once (default 8192). Long chats are trimmed to fit, oldest messages first; the instructions always stay |
 | `TAVILY_API_KEY` | Optional: web search |
 | `PAI_DATA_DIR` | Optional: store pai's data in another folder (e.g. for testing) |
 
@@ -72,7 +81,45 @@ ollama pull llama3.1:8b        # ~4.9 GB, once
 
 Then set `MODEL_MODE=live` in `.env`. `llama3.1:8b` handles tool calling much better than 3B models. It needs about 8 GB of free RAM.
 
-**Nebius Token Factory:** set `MODEL_BASE_URL=https://api.tokenfactory.nebius.com/v1/`, your key, and the Nemotron model IDs. To list the IDs your key can use, run the `curl` command in `.env.example`.
+Ollama's OpenAI-compatible API keeps only about 2k tokens of each prompt and silently drops the start (the system prompt). pai fixes this for you: on first use it creates `llama3.1:8b-pai`, the same model files with a `MODEL_CONTEXT_TOKENS` context window, and uses that.
+
+**Nebius Token Factory (NVIDIA Nemotron):** see the next section.
+
+## NVIDIA Nemotron and Nebius
+
+pai was built and tested with **NVIDIA Nemotron** models served by **Nebius Token Factory**. Token Factory exposes an OpenAI-compatible API, so the same agent code runs on Nemotron in the cloud or on a local model, with no code changes.
+
+**Setup**
+
+```bash
+# .env
+MODEL_MODE=live
+MODEL_BASE_URL=https://api.tokenfactory.nebius.com/v1/
+MODEL_API_KEY=<your Token Factory key>
+SMALL_MODEL=<Nemotron model ID for chat>
+BIG_MODEL=<Nemotron model ID for tool calling>
+```
+
+To list the model IDs your key can use, run the `curl` command in `.env.example`.
+
+**How pai uses Nemotron**
+
+| Role | Nemotron variant | Used for |
+| --- | --- | --- |
+| `SMALL_MODEL` | A smaller, faster Nemotron | Everyday chat, *Complete my text* suggestions, document summaries |
+| `BIG_MODEL` | A larger Nemotron | Tool calling: Ecospace tasks, files, commands, reminders, web search, memory |
+
+A keyword router ([`src/shared/intent.ts`](src/shared/intent.ts)) sends each message to the right model: questions and writing go to the small model with no tools, requests to *do* something go to the big model with the tools that request needs ([`src/main/agent/context.ts`](src/main/agent/context.ts)).
+
+**Where Token Factory accelerated the work**
+
+- **Larger models without local hardware:** Token Factory let us run Nemotron's tool calling at sizes that won't fit on a laptop.
+- **One code path for cloud and local:** the API is OpenAI-compatible, so moving between Nemotron and a local model is a `.env` change. Every feature was built once and works on both.
+- **No infrastructure to run:** no GPU servers to set up or manage, so the time went into the agent, the tools and the safety checks.
+
+**Nebius tools and services used:** Nebius Token Factory (model inference for NVIDIA Nemotron). No other Nebius services.
+
+**Privacy note:** with a cloud model, chat messages are sent to the provider. *Complete my text* refuses to send what you type in other apps until you switch on Settings → Writing → "Allow a cloud model". Voice transcription always stays on your computer.
 
 ### Mock mode commands
 
@@ -104,7 +151,7 @@ One tool call goes through these steps in [`src/main/agent/loop.ts`](src/main/ag
 4. **Permission dialog** (a second one for destructive actions). Outside folders get a warning.
 5. `run()`. The result goes back to the model wrapped as **data**, and is written to the activity log.
 
-The small model handles everyday chat. A keyword router ([`src/main/agent/router.ts`](src/main/agent/router.ts)) sends action requests to the big model, together with the tools.
+The small model handles everyday chat. A keyword router ([`src/shared/intent.ts`](src/shared/intent.ts)) sends action requests to the big model, together with only the tools that request needs. Each request is trimmed to fit the context window first ([`src/main/agent/context.ts`](src/main/agent/context.ts)).
 
 ## Project structure
 
@@ -165,7 +212,9 @@ In a text box in an allowed app (Mail, Messages, Slack, WhatsApp, Discord and th
 - Password fields, terminals and password managers are always refused.
 - Text is never saved; the Activity log notes only the app and how many characters were inserted.
 - With a cloud model in `.env`, it refuses until you switch on "Allow a cloud model".
-- It needs a small native helper (`native/axhelper`, Swift), built automatically by `npm start` / `npm run dev` when Xcode's command line tools are installed (`xcode-select --install`).
+- It needs a small native helper, built automatically by `npm start` / `npm run dev`:
+  - macOS: `native/axhelper` (Swift, Accessibility API). Needs Xcode's command line tools (`xcode-select --install`).
+  - Windows: `native/winhelper` (C#, UI Automation). Needs the .NET 10 SDK. Works in Notepad and other native text boxes; Chrome and Edge are not supported yet.
 
 ## Saved chats
 
@@ -197,7 +246,7 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 - `summarize_document` reads text formats (`.txt .md .csv .json .html …`), but not PDF or Word yet.
 - On macOS, window titles need the Screen Recording permission. Without it, proactive rules only see the app name.
 - Notifications from an unsigned dev build may need to be allowed for "Electron" in System Settings → Notifications.
-- Complete my text is macOS-only. Some text boxes don't share their text (Google Docs, some web editors), so it can't help there.
+- Complete my text works on macOS and Windows (not Linux yet). Some text boxes don't share their text (Google Docs, some web editors, Chrome/Edge on Windows), so it can't help there.
 - Voice input is English-first; the Whisper `base` model is a balance of speed and accuracy.
 
 ## Roadmap
@@ -216,4 +265,4 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 
 ## License
 
-Licensed under the MIT License (see [LICENSE](LICENSE)). Third-party libraries and the NVIDIA Nemotron models keep their own licenses.
+Licensed under the **MIT License**, an OSI-approved open source license (see [LICENSE](LICENSE)). Third-party libraries and models (NVIDIA Nemotron, Llama 3.1, Whisper, Kokoro) keep their own licenses.
