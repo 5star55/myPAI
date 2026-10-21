@@ -11,7 +11,7 @@
  * is edited locally and saved with the Save bar.
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { DEFAULT_COMPOSE_APPS } from '@shared/compose'
+import { DEFAULT_COMPOSE_APPS, composeHotkeyLabel } from '@shared/compose'
 import { VOICE_HOTKEY, type AppState, type ComposeAccess, type Profile, type PublicConfig, type SkillInfo } from '@shared/ipc'
 import { FoldersField, IdentityFields, PermissionsField, SkillsField } from '../components/ProfileFields'
 import { Toggle } from '../components/Toggle'
@@ -37,6 +37,7 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number]['id']
 
 const isMac = navigator.userAgent.includes('Mac')
+const composeKey = composeHotkeyLabel(isMac)
 const hotkeyLabel = isMac ? '⌘⇧Space' : VOICE_HOTKEY.replace('CommandOrControl', 'Ctrl').replace(/\+/g, '+')
 
 function loadSection(): Section {
@@ -318,7 +319,7 @@ function NotificationsCard({ name }: { name: string }) {
 
 const isLocalModel = (config: PublicConfig | null) => !config || config.mode === 'mock' || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(config.baseURL)
 
-/** "Complete my text": ⌥Space in other apps. */
+/** "Complete my text": ⌃⌥Space in other apps. */
 function WritingSection({ profile, set, config, name }: { profile: Profile; set: (p: Partial<Profile>) => void; config: PublicConfig | null; name: string }) {
   const [access, setAccess] = useState<ComposeAccess | null>(null)
   const compose = profile.compose
@@ -334,19 +335,18 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
   }, [])
 
   const local = isLocalModel(config)
-  const unavailable = !isMac || access?.available === false
-
+ const unavailable = access?.available === false
   return (
     <Page title="Writing" sub={`Let ${name} help finish what you're typing in other apps, like an email or a message.`}>
       <Card>
         <Row
-          label={<>Complete my text: <kbd className="key">⌥Space</kbd></>}
+          label={<>Complete my text: <kbd className="key">{composeKey}</kbd></>}
           help={
             unavailable
               ? isMac
                 ? "The text helper isn't built. Install Xcode's command line tools (xcode-select --install) and restart."
                 : 'Available on macOS only for now.'
-              : `In a text box in an allowed app, press ⌥Space and pick one of 3 ways to finish your sentence. ${name} reads the text only when you press it.`
+              : `In a text box in an allowed app, press ${composeKey} and pick one of 3 ways to finish your sentence. ${name} reads the text only when you press it.`
           }
         >
           <Toggle on={compose.enabled} onChange={(on) => setCompose({ enabled: on })} label="Complete my text" disabled={unavailable} />
@@ -363,7 +363,7 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
 
       <Card title="Allowed apps">
         {compose.apps.length === 0 ? (
-          <p className="empty">None. Press ⌥Space in an app to allow it from there.</p>
+          <p className="empty">None. Press {composeKey} in an app to allow it from there.</p>
         ) : (
           <div className="compose-apps">
             {compose.apps.map((a) => (
@@ -377,7 +377,7 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
           </div>
         )}
         <p className="card-foot">
-          Pressing ⌥Space in any other app asks “Allow in that app?” first.{' '}
+          Pressing {composeKey} in any other app asks “Allow in that app?” first.{' '}
           <button className="link-btn" onClick={() => setCompose({ apps: DEFAULT_COMPOSE_APPS.map((a) => ({ ...a })) })}>
             Reset to the default list
           </button>
@@ -396,7 +396,7 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
           <Toggle on={compose.allowCloud} onChange={(on) => setCompose({ allowCloud: on })} label="Allow a cloud model" />
         </Row>
         <ul className="bullets">
-          <li>Reads only when you press ⌥Space, and only the box you're typing in.</li>
+          <li>Reads only when you press {composeKey}, and only the box you're typing in.</li>
           <li>Never reads password fields, terminals or password managers.</li>
           <li>Nothing you type is saved. The Activity log only notes the app and how many characters were inserted.</li>
           <li>Nothing is inserted until you pick an option.</li>

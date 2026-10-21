@@ -1,7 +1,7 @@
 /**
  * compose — "Complete my text" in other apps.
  *
- *   ⌥Space in a text box (Mail, Messages, Slack…)
+ *   ${hotkeyLabel} in a text box (Mail, Messages, Slack…)
  *     -> checks: pai on, feature on, app allowed, not a password field, model allowed
  *     -> reads the text around the caret (native helper, Accessibility API)
  *     -> the small model writes 3 ways to continue it
@@ -12,10 +12,10 @@
  * or logged (the activity log records only the app and the length). A cloud
  * model is used only if you allowed it.
  */
-import { globalShortcut, shell } from 'electron'
+import { globalShortcut } from 'electron'
 import {
-  COMPOSE_HOTKEY,
-  NEVER_COMPOSE_APPS,
+  
+  isNeverComposeApp,
   joinCompletion,
   parseCompletions,
   tailOf,
@@ -24,15 +24,16 @@ import {
 import type { ComposeAccess } from '@shared/ipc'
 import { getConfig } from '../config'
 import { complete } from '../model'
+import { platform } from '../platform'
 import { logActivity } from '../store/activity'
 import { profileStore } from '../store/profile'
 import { isEnabled } from '../store/state'
 import { broadcast } from '../windows/common'
 import { hideCompose, mouseAnchor, showCompose, type Anchor } from '../windows/composeWindow'
-import { helperAvailable, insertText, isTrusted, readField, type FieldInfo } from './helper'
+import type { FieldInfo } from './helper'
+const hotkeyLabel = platform.composeHotkey.label
 
 const MODEL_TIMEOUT_MS = 25_000
-const ACCESSIBILITY_SETTINGS = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
 
 /** The current popup session. A new hotkey press or Esc replaces it. */
 let session: {
@@ -71,25 +72,18 @@ export async function onComposeHotkey(): Promise<void> {
   const my = ++gen
   session = { gen: my, field: { ok: false }, anchor: mouseAnchor(), view: { state: 'loading', app: '' }, options: [], abort: null }
 
-  if (!helperAvailable()) {
-    return show({
-      state: 'error',
-      app: '',
-      message:
-        process.platform === 'darwin'
-          ? "The text helper isn't built yet. Install Xcode's command line tools (xcode-select --install), then restart pai."
-          : '“Complete my text” works on macOS only for now.'
-    })
+  if (!platform.text.available()) {
+    return show({ state: 'error', app: '', message: platform.text.unavailableMessage() })
   }
 
-  const field = await readField()
+  const field = await platform.text.readField()
   if (my !== gen || !session) return
   session.field = field
   session.anchor = anchorOf(field) ?? mouseAnchor()
   const name = appName(field)
   const bundleId = field.app?.bundleId ?? ''
 
-  if (field.app?.pid === process.pid || NEVER_COMPOSE_APPS.includes(bundleId)) {
+  if (field.app?.pid === process.pid || isNeverComposeApp(bundleId)) {
     if (field.app?.pid === process.pid) return cancelCompose() // inside pai: it has its own suggestions
     return show({ state: 'error', app: name, message: `For your safety, pai never reads text in ${name}.` })
   }
@@ -107,7 +101,7 @@ export async function onComposeHotkey(): Promise<void> {
       messages[field.error ?? ''] ?? {
         state: 'error',
         app: name,
-        message: `Click into a text box in ${name} first, then press ⌥Space. (Some apps don't share their text.)`
+        message: `Click into a text box in ${name} first, then press ${hotkeyLabel}. (Some apps don't share their text.)`
       }
     )
   }
@@ -117,7 +111,7 @@ export async function onComposeHotkey(): Promise<void> {
     return show({
       state: 'error',
       app: name,
-      message: `“Complete my text” isn't allowed in ${name} yet. Allowing it lets pai read the text box you're typing in, only when you press ⌥Space.`,
+      message: `“Complete my text” isn't allowed in ${name} yet. Allowing it lets pai read the text box you're typing in, only when you press ${hotkeyLabel}.`,
       action: { kind: 'allow-app', label: `Allow in ${name}` }
     })
   }
@@ -130,7 +124,7 @@ export async function onComposeHotkey(): Promise<void> {
     })
   }
   if (!(field.before ?? '').trim()) {
-    return show({ state: 'error', app: name, message: 'Type a few words first, then press ⌥Space to finish them.' })
+    return show({ state: 'error', app: name, message: `Type a few words first, then press ${hotkeyLabel} to finish them.` })
   }
   await generate()
 }
@@ -208,7 +202,7 @@ export async function chooseCompletion(index: unknown): Promise<void> {
   const text = joinCompletion(s.field.before ?? '', s.options[i])
   session = null
   hideCompose()
-  const res = await insertText(text)
+  const res = await platform.text.insertText(text)
   // Only the app and the length are logged, never the text.
   logActivity('complete_text', name, res.ok ? 'ok' : 'error', res.ok ? `Inserted ${text.length} characters` : `Could not insert (${res.error})`)
   broadcast('data:changed', { what: 'activity' })
@@ -217,7 +211,7 @@ export async function chooseCompletion(index: unknown): Promise<void> {
     show({
       state: 'error',
       app: name,
-      message: res.error === 'app-changed' ? `${name} wasn't in front any more, so nothing was inserted.` : `Couldn't insert into ${name}. Try clicking in the text box and pressing ⌥Space again.`
+      message: res.error === 'app-changed' ? `${name} wasn't in front any more, so nothing was inserted.` : `Couldn't insert into ${name}. Try clicking in the text box and pressing ${hotkeyLabel} again.`
     })
   }
 }
@@ -232,13 +226,13 @@ export async function composeAction(): Promise<void> {
     const { bundleId, name } = s.field.app
     profileStore.update((p) => ({ ...p, compose: { ...p.compose, apps: [...p.compose.apps.filter((a) => a.id !== bundleId), { id: bundleId, name }] } }))
     broadcast('data:changed', { what: 'profile' })
-    if (!(s.field.before ?? '').trim()) return show({ state: 'error', app: name, message: 'Allowed. Type a few words, then press ⌥Space to finish them.' })
+    if (!(s.field.before ?? '').trim()) return show({ state: 'error', app: name, message: `Allowed. Type a few words, then press ${hotkeyLabel} to finish them.` })
     return generate()
   }
   cancelCompose()
   if (kind === 'open-access') {
-    await isTrusted(true) // macOS adds pai to the list and shows its own prompt
-    await shell.openExternal(ACCESSIBILITY_SETTINGS)
+    await platform.text.isTrusted(true) // macOS adds pai to the list and shows its own prompt
+    await platform.text.openPermissionSettings()
   }
   if (kind === 'open-settings') openSettingsSection?.('writing')
 }
@@ -251,24 +245,24 @@ export function cancelCompose(): void {
 }
 
 export async function composeAccess(prompt: boolean): Promise<ComposeAccess> {
-  if (!helperAvailable()) return { available: false, trusted: false }
-  const trusted = await isTrusted(prompt)
-  if (prompt && !trusted) await shell.openExternal(ACCESSIBILITY_SETTINGS)
+  if (!platform.text.available()) return { available: false, trusted: false }
+  const trusted = await platform.text.isTrusted(prompt)
+  if (prompt && !trusted) await platform.text.openPermissionSettings()
   return { available: true, trusted }
 }
 
 let openSettingsSection: ((section: string) => void) | null = null
 let registered = false
 
-/** Register the hotkey only while the feature is on (so ⌥Space stays free otherwise). */
+/** Register the hotkey only while the feature is on (so ${hotkeyLabel} stays free otherwise). */
 export function syncComposeHotkey(openSettings?: (section: string) => void): void {
   if (openSettings) openSettingsSection = openSettings
-  const want = process.platform === 'darwin' && profileStore.get().compose.enabled
+  const want = platform.supports.completeText && profileStore.get().compose.enabled
   if (want && !registered) {
-    registered = globalShortcut.register(COMPOSE_HOTKEY, () => void onComposeHotkey())
-    if (!registered) console.warn(`[compose] could not register ${COMPOSE_HOTKEY}; another app may be using it`)
+    registered = globalShortcut.register(platform.composeHotkey.accelerator, () => void onComposeHotkey())
+    if (!registered) console.warn(`[compose] could not register ${platform.composeHotkey.accelerator}; another app may be using it`)
   } else if (!want && registered) {
-    globalShortcut.unregister(COMPOSE_HOTKEY)
+    globalShortcut.unregister(platform.composeHotkey.accelerator)
     registered = false
     cancelCompose()
   }
