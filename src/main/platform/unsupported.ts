@@ -1,3 +1,4 @@
+import { COMPOSE_HOTKEY, composeHotkeyLabel } from '@shared/compose'
 import type { Platform, PlatformId } from './types'
 
 /** Systems without a native text helper yet (Linux until task A3). */
@@ -5,7 +6,7 @@ export function unsupportedPlatform(id: Exclude<PlatformId, 'mac'>): Platform {
   return {
     id,
     supports: { completeText: false },
-    composeHotkey: { accelerator: 'Ctrl+Alt+Space', label: 'Ctrl+Alt+Space' },
+    composeHotkey: { accelerator: COMPOSE_HOTKEY, label: composeHotkeyLabel(false) },
     text: {
       available: () => false,
       unavailableMessage: () => '“Complete my text” works on macOS and Windows only for now.',

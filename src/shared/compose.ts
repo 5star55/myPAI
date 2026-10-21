@@ -5,8 +5,15 @@
  * Pure helpers shared by main and the UI (and easy to test).
  */
 
-/** Pressed in any app to get completions for the focused text box. */
-export const COMPOSE_HOTKEY = 'Alt+Space'
+/**
+ * Pressed in any app to get completions for the focused text box: ⌃⌥Space on macOS,
+ * Ctrl+Alt+Space on Windows. (⌥Space is often taken by ChatGPT or Claude, and
+ * Alt+Space opens the window menu on Windows.)
+ */
+export const COMPOSE_HOTKEY = 'Control+Alt+Space'
+
+/** How to show COMPOSE_HOTKEY to people on each system. */
+export const composeHotkeyLabel = (mac: boolean): string => (mac ? '⌃⌥Space' : 'Ctrl+Alt+Space')
 
 /** An app (by macOS bundle id) where "Complete my text" may read the focused text box. */
 export interface ComposeApp {

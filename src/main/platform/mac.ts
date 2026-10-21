@@ -1,5 +1,5 @@
 import { shell } from 'electron'
-import { COMPOSE_HOTKEY } from '@shared/compose'
+import { COMPOSE_HOTKEY, composeHotkeyLabel } from '@shared/compose'
 import { helperAvailable, insertText, isTrusted, readField, stopHelper } from '../compose/helper'
 import type { Platform } from './types'
 
@@ -8,7 +8,7 @@ const ACCESSIBILITY_SETTINGS = 'x-apple.systempreferences:com.apple.preference.s
 export const macPlatform: Platform = {
   id: 'mac',
   supports: { completeText: true },
-  composeHotkey: { accelerator: COMPOSE_HOTKEY, label: '⌥Space' },
+  composeHotkey: { accelerator: COMPOSE_HOTKEY, label: composeHotkeyLabel(true) },
   text: {
     available: helperAvailable,
     unavailableMessage: () =>

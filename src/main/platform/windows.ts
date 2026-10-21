@@ -1,11 +1,11 @@
+import { COMPOSE_HOTKEY, composeHotkeyLabel } from '@shared/compose'
 import { helperAvailable, insertText, isTrusted, readField, stopHelper } from '../compose/helper'
 import type { Platform } from './types'
 
 export const windowsPlatform: Platform = {
   id: 'windows',
   supports: { completeText: true },
-  // Alt+Space opens the window menu on Windows, so use Ctrl+Alt+Space (A5 will make this configurable).
-  composeHotkey: { accelerator: 'Ctrl+Alt+Space', label: 'Ctrl+Alt+Space' },
+  composeHotkey: { accelerator: COMPOSE_HOTKEY, label: composeHotkeyLabel(false) }, // A5 will make this configurable
   text: {
     available: helperAvailable,
     unavailableMessage: () =>
