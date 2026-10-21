@@ -68,7 +68,7 @@ app.whenReady().then(() => {
   if (!globalShortcut.register(VOICE_HOTKEY, toggleVoice)) {
     console.warn(`[voice] could not register ${VOICE_HOTKEY}; another app may be using it`)
   }
-  // "Complete my text" (⌥Space in other apps), only while switched on in Settings.
+  // "Complete my text" (⌃⌥Space in other apps), only while switched on in Settings.
   syncComposeHotkey(openSettings)
   startReminderScheduler()
   refreshProactive()

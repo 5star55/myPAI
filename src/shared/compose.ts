@@ -5,8 +5,15 @@
  * Pure helpers shared by main and the UI (and easy to test).
  */
 
-/** Pressed in any app to get completions for the focused text box. */
-export const COMPOSE_HOTKEY = 'Alt+Space'
+/**
+ * Pressed in any app to get completions for the focused text box: ⌃⌥Space on macOS,
+ * Ctrl+Alt+Space on Windows. (⌥Space is often taken by ChatGPT or Claude, and
+ * Alt+Space opens the window menu on Windows.)
+ */
+export const COMPOSE_HOTKEY = 'Control+Alt+Space'
+
+/** How to show COMPOSE_HOTKEY to people on each system. */
+export const composeHotkeyLabel = (mac: boolean): string => (mac ? '⌃⌥Space' : 'Ctrl+Alt+Space')
 
 /** An app (by macOS bundle id) where "Complete my text" may read the focused text box. */
 export interface ComposeApp {
@@ -39,7 +46,9 @@ export const DEFAULT_COMPOSE_APPS: ComposeApp[] = [
 ]
 
 /** Never read text here, even if asked: terminals and password managers. */
+/** Never read text here, even if asked: terminals and password managers. */
 export const NEVER_COMPOSE_APPS = [
+  // macOS (bundle ids)
   'com.apple.Terminal',
   'com.googlecode.iterm2',
   'dev.warp.Warp-Stable',
@@ -47,8 +56,33 @@ export const NEVER_COMPOSE_APPS = [
   'com.1password.1password',
   'com.agilebits.onepassword7',
   'com.bitwarden.desktop',
-  'com.github.Electron' // pai itself while running from source
+  'com.github.Electron', // pai itself while running from source
+  // Windows (lowercase program names)
+  'windowsterminal.exe',
+  'wt.exe',
+  'cmd.exe',
+  'powershell.exe',
+  'pwsh.exe',
+  'conhost.exe',
+  'mintty.exe', // Git Bash
+  'wsl.exe',
+  'putty.exe',
+  'keepass.exe',
+  'keepassxc.exe',
+  '1password.exe',
+  'bitwarden.exe',
+  'lastpass.exe',
+  'dashlane.exe',
+  'nordpass.exe',
+  'electron.exe', // pai itself while running from source
+  'pai.exe'
 ]
+
+/** Same check, ignoring capitalisation (Windows program names come back in any case). */
+export function isNeverComposeApp(id: string): boolean {
+  const key = id.trim().toLowerCase()
+  return NEVER_COMPOSE_APPS.some((n) => n.toLowerCase() === key)
+}
 
 export function defaultComposeSettings(): ComposeSettings {
   return { enabled: false, apps: DEFAULT_COMPOSE_APPS.map((a) => ({ ...a })), allowCloud: false }
@@ -140,8 +174,8 @@ export function sanitizeCompose(raw: unknown): ComposeSettings {
     for (const a of r.apps as unknown[]) {
       const id = typeof (a as ComposeApp)?.id === 'string' ? (a as ComposeApp).id.trim().slice(0, 200) : ''
       const name = typeof (a as ComposeApp)?.name === 'string' ? (a as ComposeApp).name.trim().slice(0, 80) : ''
-      if (id && !NEVER_COMPOSE_APPS.includes(id) && !apps.some((x) => x.id === id)) apps.push({ id, name: name || id })
-    }
+            if (id && !isNeverComposeApp(id) && !apps.some((x) => x.id === id)) apps.push({ id, name: name || id })
+  }
   }
   return {
     enabled: r.enabled === true,
@@ -149,3 +183,4 @@ export function sanitizeCompose(raw: unknown): ComposeSettings {
     allowCloud: r.allowCloud === true
   }
 }
+
