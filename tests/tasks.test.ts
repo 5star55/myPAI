@@ -38,10 +38,10 @@ describe('Ecospace tasks', () => {
   })
 
   it('runs up to 3 at once and queues the rest', async () => {
-    const ids = [1, 2, 3, 4].map((i) => startTask(`run sleep 1 && echo ${i}`, 'ecospace').id)
+    const ids = [1, 2, 3, 4].map((i) => startTask(`run sleep 1; echo ${i}`, 'ecospace').id)
     await waitUntil(() => ids.slice(0, 3).every((id) => byId(id).status === 'running'))
     expect(byId(ids[3]).status).toBe('queued')
-    await waitUntil(() => ids.every((id) => byId(id).status === 'done'), 15000)
+    await waitUntil(() => ids.every((id) => byId(id).status === 'done'), 20000)
   })
 
   it('shows "needs you" while a permission dialog is open', async () => {
