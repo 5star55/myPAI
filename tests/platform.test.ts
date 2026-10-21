@@ -15,9 +15,9 @@ describe('platform layer', () => {
     expect(pickPlatform('linux').supports.completeText).toBe(false)
   })
 
-  it('Windows does not use Alt+Space (it opens the window menu)', () => {
-    expect(pickPlatform('darwin').composeHotkey.accelerator).toBe('Alt+Space')
-    expect(pickPlatform('win32').composeHotkey.accelerator).not.toBe('Alt+Space')
+  it('uses Ctrl+Alt+Space everywhere, never Alt+Space (taken by other apps / the Windows window menu)', () => {
+    expect(pickPlatform('darwin').composeHotkey).toEqual({ accelerator: 'Control+Alt+Space', label: '⌃⌥Space' })
+    expect(pickPlatform('win32').composeHotkey).toEqual({ accelerator: 'Control+Alt+Space', label: 'Ctrl+Alt+Space' })
   })
 
   it('unsupported systems fail cleanly instead of throwing', async () => {
