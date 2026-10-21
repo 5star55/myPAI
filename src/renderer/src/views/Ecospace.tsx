@@ -7,7 +7,9 @@
  * The floating orb is a mini version of this screen.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { looksLikeChat } from '@shared/intent'
 import type { Profile, Suggestion, VoiceStatus } from '@shared/ipc'
+import { ChatNudge } from '../components/ChatNudge'
 import { Orb } from '../components/Orb'
 import { TaskCard } from '../components/TaskCard'
 import { isActiveTask, useTasks } from '../tasks'
@@ -35,6 +37,8 @@ export function Ecospace({ profile, enabled, incomingDraft, onDraftTaken }: Prop
   const tasks = useTasks()
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+  /** A question typed here: offer to ask it in the chat instead. */
+  const [nudge, setNudge] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [voice, setVoice] = useState<VoiceStatus>({ state: 'idle' })
   const [showEarlier, setShowEarlier] = useState(false)
@@ -77,14 +81,23 @@ export function Ecospace({ profile, enabled, incomingDraft, onDraftTaken }: Prop
     }
   }, [draft, enabled, tasks.length])
 
-  async function start(text: string) {
+  async function start(text: string, asTask = false) {
     const prompt = text.trim()
     if (!prompt) return
     setError(null)
+    if (!asTask && looksLikeChat(prompt)) return setNudge(prompt)
+    setNudge(null)
     const res = await window.pai.startTask(prompt, 'ecospace')
     if (res.ok) setDraft('')
     else setError(res.error)
     inputRef.current?.focus()
+  }
+
+  async function askInChat(text: string) {
+    setNudge(null)
+    const res = await window.pai.askInChat(text)
+    if (res.ok) setDraft('')
+    else setError(res.error)
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -119,7 +132,10 @@ export function Ecospace({ profile, enabled, incomingDraft, onDraftTaken }: Prop
           <textarea
             ref={inputRef}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              setNudge(null)
+            }}
             onKeyDown={onKeyDown}
             rows={1}
             placeholder={!enabled ? `${profile.assistantName} is off` : listening ? voice.caption ?? 'Listening…' : 'Describe a task… e.g. “Tidy my Downloads and tell me what you moved”'}
@@ -148,11 +164,12 @@ export function Ecospace({ profile, enabled, incomingDraft, onDraftTaken }: Prop
         </form>
         {listening && voice.caption && <p className="eco-caption">{voice.caption}</p>}
         {error && <p className="error-box">{error}</p>}
+        {nudge && <ChatNudge onChat={() => void askInChat(nudge)} onTask={() => void start(nudge, true)} />}
 
         {suggestions.length > 0 && enabled && (
           <div className="eco-ideas">
             {suggestions.map((s) => (
-              <button key={s.text} className="chip-suggestion" title={s.text} onClick={() => (s.send ? start(s.text) : setDraft(s.text))}>
+              <button key={s.text} className="chip-suggestion" title={s.text} onClick={() => (s.send ? start(s.text, true) : setDraft(s.text))}>
                 <span className="chip-text">{s.label}</span>
                 {!s.send && <span className="chip-edit">✎</span>}
               </button>

@@ -440,6 +440,7 @@ export const IPC = {
   taskDelete: 'tasks:delete',
   taskClearFinished: 'tasks:clear-finished',
   openEcospace: 'window:open-ecospace',
+  askInChat: 'window:ask-in-chat',
   floatFocus: 'float:focus',
   convList: 'conversations:list',
   convGet: 'conversations:get',
@@ -594,6 +595,8 @@ export interface PaiApi {
   clearFinishedTasks(): Promise<Result<void>>
   /** Show the main window on the Ecospace. */
   openEcospace(): Promise<Result<void>>
+  /** Open the chat and send this message there (a question typed into the Ecospace). */
+  askInChat(text: string): Promise<Result<void>>
   /** Start/stop a hands-free conversation (same as the hotkey). */
   toggleVoice(): Promise<Result<void>>
   /** Orb: answer the review of what was heard ("send now" or "edit in the chat"). */
