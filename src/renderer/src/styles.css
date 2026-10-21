@@ -986,6 +986,51 @@ button:focus-visible {
   border: 1px solid var(--glass-border);
 }
 
+.code-block {
+  margin: 6px 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: rgba(8, 11, 28, 0.85);
+  overflow: hidden;
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--glass-border);
+  font: 600 11px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+}
+
+.code-copy {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.code-copy:hover {
+  color: var(--accent);
+  background: rgba(56, 225, 255, 0.08);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  white-space: pre;
+  font: 12.5px/1.55 var(--mono);
+  color: var(--text);
+  user-select: text;
+}
+
 .bubble.streaming .rich > :last-child::after {
   content: '';
   display: inline-block;

@@ -54,8 +54,10 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean): string 
       '- Commands run in a non-interactive shell: never use commands that wait for input, open editors, or need sudo.',
       '- When the user asks you to write or explain code, reply with the code in a ```code block``` and do not run it. Run code only when they ask you to run it or need its output.',
       process.platform === 'win32'
-        ? '- Python here is "python". For anything longer than one line, save it to a file with create_file and run that file.'
-        : '- Python here is "python3" (never "python"). For anything longer than one line, save it to a file with create_file and run that file, instead of quoting it into python3 -c.',
+        ? '- Python here is "python". When you must RUN more than one line of it, save it to a file and run that file.'
+        : '- Python here is "python3" (never "python"). When you must RUN more than one line of it, save it to a file and run that file, instead of quoting it into python3 -c.',
+      '- Never create, save or edit a file unless the user asked for a file. Teaching, explaining and writing code or text all go in your reply.',
+      '- Never tell the user to use your tools (e.g. "run it with run_command"). Do it yourself, or tell them the normal way (e.g. "run python3 hello.py in Terminal").',
       '',
       'HOW TO WORK:',
       '- Before using tools, say in ONE short sentence what you are about to do (e.g. "I\'ll check what\'s in your Documents folder.").',

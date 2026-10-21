@@ -21,6 +21,16 @@ describe('reply formatting', () => {
     expect(parseInline('<script>alert(1)</script>')).toEqual([{ type: 'text', text: '<script>alert(1)</script>' }])
   })
 
+  it('keeps fenced code exactly as written (the "teach me python" bug)', () => {
+    const blocks = parseBlocks('Here you go:\n\n```python\n# Print a greeting\nif x:\n    print("hi")\n```\nThat is it.')
+    expect(blocks.map((b) => b.type)).toEqual(['paragraph', 'code', 'paragraph'])
+    expect(blocks[1]).toEqual({ type: 'code', lang: 'python', text: '# Print a greeting\nif x:\n    print("hi")' })
+  })
+
+  it('shows an unclosed code block (still streaming) as code', () => {
+    expect(parseBlocks('```js\nconst a = 1')).toEqual([{ type: 'code', lang: 'js', text: 'const a = 1' }])
+  })
+
   it('parses lists and headings', () => {
     const blocks = parseBlocks('## Top picks\n1. First\n2. Second\n\n- a\n- b\nDone.')
     expect(blocks.map((b) => b.type)).toEqual(['heading', 'list', 'list', 'paragraph'])

@@ -3,8 +3,8 @@
  *
  * It turns text into a list of blocks and inline pieces (never HTML), so the
  * UI renders them as React elements and model output can't inject markup.
- * Supports: headings (#), bullet and numbered lists, **bold**, *italic*,
- * `code`, [links](https://...) and bare https:// links.
+ * Supports: headings (#), bullet and numbered lists, ```fenced code blocks```,
+ * **bold**, *italic*, `code`, [links](https://...) and bare https:// links.
  */
 import { isWebUrl } from './clean'
 
@@ -19,6 +19,10 @@ export type Block =
   | { type: 'heading'; inline: Inline[] }
   | { type: 'paragraph'; lines: Inline[][] }
   | { type: 'list'; ordered: boolean; items: Inline[][] }
+  /** Shown exactly as written: no formatting, indentation kept. */
+  | { type: 'code'; lang: string; text: string }
+
+const FENCE = /^\s*```\s*([\w+#.-]*)\s*$/
 
 const INLINE = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]|\*[^*\n]+\*|_[^_\n]+_)/g
 
@@ -55,7 +59,21 @@ export function parseBlocks(text: string): Block[] {
     para = []
     list = null
   }
+  let code: { lang: string; lines: string[] } | null = null
   for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const fence = raw.match(FENCE)
+    if (code) {
+      if (fence && !fence[1]) {
+        blocks.push({ type: 'code', lang: code.lang, text: code.lines.join('\n') })
+        code = null
+      } else code.lines.push(raw)
+      continue
+    }
+    if (fence) {
+      flush()
+      code = { lang: fence[1].toLowerCase(), lines: [] }
+      continue
+    }
     const line = raw.trimEnd()
     const heading = line.match(/^#{1,4}\s+(.*)$/)
     const bullet = line.match(/^\s*[-*•]\s+(.*)$/)
@@ -78,5 +96,7 @@ export function parseBlocks(text: string): Block[] {
     }
   }
   flush()
+  // Not closed yet (still streaming, or the model forgot): show it as code anyway.
+  if (code) blocks.push({ type: 'code', lang: code.lang, text: code.lines.join('\n') })
   return blocks
 }

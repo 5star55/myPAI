@@ -9,9 +9,18 @@ const ACTION_WORDS =
   /\b(run|execute|command|terminal|shell|script|install|git|npm|pip|python|node|brew|create|make|write|save|new file|mkdir|folder|folders?|downloads|desktop|documents|directory|rename|move|organi[sz]e|tidy|clean up|delete|trash|summari[sz]e|read|open|launch|remind|reminders?|alarm|schedule|timer|search|look up|google|web|news|latest|remember|forget|recall|what do you know|plan my day)\b/i
 const LOOKS_LIKE_PATH = /(^|\s)(~\/|\/[\w.-]+\/|[a-z]:\\)/i
 
+/** Learning or writing something to read in the chat ("teach me python", "write a python code to…"). */
+const CHAT_FIRST =
+  /^\s*(teach me|explain|help me (understand|learn)|i want to learn|how (do|does|can|to)\b|write (me )?(a |an |some )?([\w+#.-]+ )?(code|program|script|function|class|example|poem|story|email|essay|letter|message|caption|bio))/i
+/** Still a job even when phrased like that: files, folders, running, reminders, the web. */
+const STRONG_ACTION =
+  /\b(run|execute|terminal|shell|install|save|new file|mkdir|folders?|downloads|desktop|documents|directory|rename|move|organi[sz]e|tidy|delete|trash|open|launch|remind|reminders?|alarm|timer|search|look up|google|news|latest)\b/i
+
 /** Looks like a request to DO something (on the computer, the web, reminders, memory). */
 export function needsTools(text: string): boolean {
-  return ACTION_WORDS.test(text) || LOOKS_LIKE_PATH.test(text)
+  if (LOOKS_LIKE_PATH.test(text)) return true
+  if (CHAT_FIRST.test(text) && !STRONG_ACTION.test(text)) return false
+  return ACTION_WORDS.test(text)
 }
 
 /** Greetings, thanks, "how are you", "who are you"… : just chat, even when tools are on offer. */
@@ -33,5 +42,5 @@ export function looksLikeChat(text: string): boolean {
   if (!t) return false
   if (isSmallTalk(t)) return true
   if (needsTools(t)) return false
-  return t.endsWith('?') || QUESTION.test(t)
+  return t.endsWith('?') || QUESTION.test(t) || CHAT_FIRST.test(t)
 }
