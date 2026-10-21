@@ -23,6 +23,7 @@ import OpenAI, {
 import type { Result } from '@shared/ipc'
 import { getConfig } from './config'
 import { mockReply } from './mock'
+import { withContext } from './ollama'
 
 export type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 export type ToolSpec = OpenAI.Chat.ChatCompletionFunctionTool
@@ -48,7 +49,15 @@ export interface CompleteRequest {
   signal?: AbortSignal
   /** If given, the reply is streamed and each new piece of text is passed here. */
   onText?: (delta: string) => void
+  /** Default: low for tool calling (precise), higher for chat (natural). */
+  temperature?: number
+  /** A text reply cut off by the token limit is continued (up to this many times). */
+  continueIfCut?: number
 }
+
+/** Low temperature keeps tool calls and arguments precise; chat gets a little more life. */
+const TEMPERATURE = { big: 0.2, small: 0.6 }
+const CONTINUE_NOTE = 'Continue exactly where you stopped, mid-sentence if needed. Do not repeat anything or add a preamble.'
 
 const REQUEST_TIMEOUT_MS = 60_000
 
@@ -87,30 +96,44 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
   }
 
   try {
-    const body = {
-      model,
-      messages: req.messages,
-      max_tokens: maxTokens, // required on every request
-      ...(req.tools?.length ? { tools: req.tools } : {})
-    }
-    let res: OpenAI.Chat.ChatCompletion
-    if (req.onText) {
-      // Streaming: text arrives piece by piece; tool calls are assembled by the SDK.
-      const onText = req.onText
-      const stream = getClient().chat.completions.stream(body, { signal: req.signal })
-      stream.on('content', (delta) => onText(delta))
-      res = await stream.finalChatCompletion()
-    } else {
-      res = await getClient().chat.completions.create(body, { signal: req.signal })
-    }
-    const msg = res.choices[0]?.message
-    if (!msg) return { ok: false, error: 'The model returned an empty response.' }
+    const name = await withContext(model, c.baseURL, c.contextTokens)
+    const messages = [...req.messages]
+    let text = ''
+    let toolCalls: ToolCall[] = []
+    for (let part = 0; ; part++) {
+      const body = {
+        model: name,
+        messages,
+        max_tokens: maxTokens, // required on every request
+        temperature: req.temperature ?? TEMPERATURE[req.size],
+        ...(req.tools?.length ? { tools: req.tools } : {})
+      }
+      let res: OpenAI.Chat.ChatCompletion
+      if (req.onText) {
+        // Streaming: text arrives piece by piece; tool calls are assembled by the SDK.
+        const onText = req.onText
+        const stream = getClient().chat.completions.stream(body, { signal: req.signal })
+        stream.on('content', (delta) => onText(delta))
+        res = await stream.finalChatCompletion()
+      } else {
+        res = await getClient().chat.completions.create(body, { signal: req.signal })
+      }
+      const choice = res.choices[0]
+      const msg = choice?.message
+      if (!msg) return { ok: false, error: 'The model returned an empty response.' }
 
-    const toolCalls: ToolCall[] = (msg.tool_calls ?? [])
-      .filter((t) => t.type === 'function')
-      .map((t) => ({ id: t.id, name: t.function.name, arguments: t.function.arguments }))
+      toolCalls = (msg.tool_calls ?? [])
+        .filter((t) => t.type === 'function')
+        .map((t) => ({ id: t.id, name: t.function.name, arguments: t.function.arguments }))
+      text += msg.content ?? ''
 
-    return { ok: true, value: { text: msg.content ?? '', toolCalls, model } }
+      // Cut off by max_tokens mid-answer: ask for the rest instead of ending on half a sentence.
+      const cut = choice.finish_reason === 'length' && toolCalls.length === 0 && (msg.content ?? '').trim()
+      if (!cut || part >= (req.continueIfCut ?? 0) || req.signal?.aborted) break
+      messages.push({ role: 'assistant', content: msg.content ?? '' }, { role: 'user', content: CONTINUE_NOTE })
+    }
+
+    return { ok: true, value: { text, toolCalls, model } }
   } catch (err) {
     return { ok: false, error: describeError(err, model) }
   }

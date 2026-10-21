@@ -20,6 +20,7 @@ import {
   type StepStatus,
   type ToolStep
 } from '@shared/ipc'
+import { getConfig } from '../config'
 import { complete, type ChatMessage, type ToolCall } from '../model'
 import { buildSystemPrompt } from '../prompt'
 import { requestPermission } from '../security/permissions'
@@ -27,12 +28,15 @@ import { logActivity } from '../store/activity'
 import { profileStore } from '../store/profile'
 import { isEnabled } from '../store/state'
 import { availableTools, findTool, toSpec } from '../tools/registry'
+import { estimateTokens, fitHistory, pickTools, shrinkToolOutputs, totalTokens } from './context'
 import { ToolInputError, type PreparedCall } from '../tools/types'
 import { broadcast } from '../windows/common'
 import { isNoToolRefusal, isSmallTalk, needsTools } from './router'
 import { extractTextToolCalls, findStrayToolCalls } from './textToolCalls'
 
-const MAX_ROUNDS = 6
+const MAX_ROUNDS = 8
+/** Room kept free for the server's own message formatting. */
+const CONTEXT_MARGIN = 300
 const MAX_TOOL_OUTPUT = 6000
 const CONFUSED_REPLY = "Sorry, I got mixed up and couldn't finish that. Please try again, or say it a little differently."
 
@@ -219,23 +223,34 @@ export async function runChat(input: unknown): Promise<Result<ChatReply>> {
 /** Model -> tools -> model ... -> answer. Used by the chat and by Ecospace tasks. */
 export async function runAgent(history: ChatTurn[], signal: AbortSignal, hooks: RunHooks): Promise<Result<ChatReply>> {
   const profile = profileStore.get()
+  const config = getConfig()
   const lastText = history[history.length - 1].content
   const tools = availableTools(profile)
   // Tasks get tools even without action words, but small talk ("how are you?") is just chat.
   let useTools = tools.length > 0 && (needsTools(lastText) || (hooks.forceTools === true && !isSmallTalk(lastText)))
+  // Offer only the tools this request is about (judged on the last two things the user said).
+  const recentUser = history.filter((t) => t.role === 'user').slice(-2).map((t) => t.content).join('\n')
+  const offered = pickTools(tools, recentUser).map(toSpec)
 
-  const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(profile, useTools) }, ...history]
+  // Fit the conversation into the context window (oldest turns go first; never the system prompt).
+  const system = buildSystemPrompt(profile, useTools, hooks.forceTools === true)
+  const replyTokens = useTools ? config.bigMaxTokens : config.smallMaxTokens
+  const toolTokens = useTools ? estimateTokens(JSON.stringify(offered)) : 0
+  const budget = config.contextTokens - replyTokens - toolTokens - CONTEXT_MARGIN
+  const messages: ChatMessage[] = [{ role: 'system', content: system }, ...fitHistory(history, budget - estimateTokens(system))]
   const steps: ToolStep[] = []
   let nudged = false
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     if (round > 0) hooks.emit({ kind: 'text-reset' })
+    if (totalTokens(messages) > budget) shrinkToolOutputs(messages, budget)
     const res = await complete({
       size: useTools ? 'big' : 'small',
       messages,
-      tools: useTools ? tools.map(toSpec) : undefined,
+      tools: useTools ? offered : undefined,
       signal,
-      onText: (delta) => hooks.emit({ kind: 'text', delta })
+      onText: (delta) => hooks.emit({ kind: 'text', delta }),
+      continueIfCut: 2
     })
     if (signal.aborted) return { ok: false, error: 'Stopped.' }
     if (!res.ok) return res

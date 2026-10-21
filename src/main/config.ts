@@ -19,6 +19,8 @@ export interface AppConfig {
   bigModel: string
   smallMaxTokens: number
   bigMaxTokens: number
+  /** How many tokens the model can read at once (prompt + reply). Used to fit history, and for Ollama's num_ctx. */
+  contextTokens: number
   tavilyApiKey: string
   warnings: string[]
 }
@@ -28,8 +30,9 @@ const DEFAULTS = {
   baseURL: 'http://localhost:11434/v1',
   apiKey: 'ollama', // Ollama ignores the key, but the openai package requires one.
   model: 'llama3.1:8b',
-  smallMaxTokens: 512,
-  bigMaxTokens: 1024
+  smallMaxTokens: 1024,
+  bigMaxTokens: 1536,
+  contextTokens: 8192
 }
 
 function readPositiveInt(raw: string | undefined, fallback: number, name: string, warnings: string[]): number {
@@ -70,6 +73,7 @@ function loadConfig(): AppConfig {
     bigModel: env.BIG_MODEL?.trim() || env.SMALL_MODEL?.trim() || DEFAULTS.model,
     smallMaxTokens: readPositiveInt(env.SMALL_MAX_TOKENS, DEFAULTS.smallMaxTokens, 'SMALL_MAX_TOKENS', warnings),
     bigMaxTokens: readPositiveInt(env.BIG_MAX_TOKENS, DEFAULTS.bigMaxTokens, 'BIG_MAX_TOKENS', warnings),
+    contextTokens: readPositiveInt(env.MODEL_CONTEXT_TOKENS, DEFAULTS.contextTokens, 'MODEL_CONTEXT_TOKENS', warnings),
     tavilyApiKey: env.TAVILY_API_KEY?.trim() ?? '',
     warnings
   }
