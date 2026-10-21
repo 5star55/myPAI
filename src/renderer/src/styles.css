@@ -3192,6 +3192,40 @@ input[type='range'] {
   color: #ffb3c0;
 }
 
+/* "This looks like a question… ask it in Chat?" under the Ecospace box */
+.chat-nudge {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 225, 255, 0.35);
+  background: rgba(56, 225, 255, 0.07);
+  animation: rise 0.2s ease;
+}
+
+.chat-nudge p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.chat-nudge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-nudge-compact {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+}
+
+.chat-nudge-compact p {
+  font-size: 12.5px;
+}
+
 .task-compact {
   position: relative;
   padding: 8px 10px;
@@ -3264,6 +3298,26 @@ input[type='range'] {
 
 .float-working .orb-ring {
   animation-duration: 1.6s;
+}
+
+/* The idle orb stands still, so its window is never redrawn (saves battery).
+   It moves only while a task runs, something needs you, or you're talking to it. */
+.float-orb .orb-core,
+.float-orb .orb-ring {
+  animation-play-state: paused;
+}
+
+.float-working .orb-core,
+.float-working .orb-ring,
+.float-alert .orb-core,
+.float-alert .orb-ring,
+.float-listening .orb-core,
+.float-listening .orb-ring,
+.float-thinking .orb-core,
+.float-thinking .orb-ring,
+.float-speaking .orb-core,
+.float-speaking .orb-ring {
+  animation-play-state: running;
 }
 
 /* ---------- reminder card on the orb ---------- */

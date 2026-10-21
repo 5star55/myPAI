@@ -30,7 +30,8 @@ export const saveMemory: Tool = {
 
 export const recallMemory: Tool = {
   name: 'recall_memory',
-  description: 'Search saved facts about the user.',
+  description:
+    "Search saved facts about the user. Use it on your own whenever the user's preferences, people, plans or past details could help you answer; no need to ask first.",
   permission: 'memory',
   parameters: {
     type: 'object',
@@ -42,6 +43,8 @@ export const recallMemory: Tool = {
     return {
       action: 'Search your saved memories',
       target: query,
+      // Read-only and stays on this computer, so it never needs the dialog.
+      autoApprove: true,
       run: async () => {
         const found = searchMemory(query)
         return found.length ? found.map((m) => `- ${m.text}`).join('\n') : 'No matching memories.'

@@ -17,6 +17,14 @@ describe('tool calls written as text', () => {
     expect(extractTextToolCalls('{"name": "rm_everything", "parameters": {}}', ['list_files']).calls).toHaveLength(0)
     expect(extractTextToolCalls('Your config: {"theme": "dark"}', ['list_files']).calls).toHaveLength(0)
   })
+
+  it("forgives shell-style \\' escapes (the python bug report)", () => {
+    const reply = `We can run it like this:\n\n{"name": "run_command", "parameters": {"command":"/usr/bin/python -c 'import array; arr=array.array(\\'i\\', [1, 2, 3]); print(arr[0])'"}}`
+    const { calls, rest } = extractTextToolCalls(reply, ['run_command'])
+    expect(calls).toHaveLength(1)
+    expect(JSON.parse(calls[0].arguments).command).toContain("array.array('i'")
+    expect(rest).toBe('We can run it like this:')
+  })
 })
 
 describe('date questions', () => {
@@ -36,6 +44,12 @@ describe('stray "calls" to things that are not tools', () => {
     const { names, rest } = findStrayToolCalls('{"name": "Daily Planner", "parameters": {"function": "plan_day", "name": "Tomisin"}}')
     expect(names).toEqual(['Daily Planner'])
     expect(rest).toBe('')
+  })
+
+  it('hides tool-call JSON even when it cannot be parsed', () => {
+    const { names, rest } = findStrayToolCalls('Try this: {"name": "run_command", "parameters": {"command": "echo \\x"}}')
+    expect(names).toEqual(['run_command'])
+    expect(rest).toBe('Try this:')
   })
 
   it('ignores ordinary JSON', () => {

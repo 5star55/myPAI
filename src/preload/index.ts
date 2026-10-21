@@ -73,6 +73,7 @@ const api: PaiApi = {
   deleteTask: (id) => call(IPC.taskDelete, id),
   clearFinishedTasks: () => call(IPC.taskClearFinished),
   openEcospace: () => call(IPC.openEcospace),
+  askInChat: (text) => call(IPC.askInChat, text),
   toggleVoice: () => call(IPC.voiceToggle),
   voiceReview: (action) => call(IPC.voiceReview, action),
 
