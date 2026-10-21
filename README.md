@@ -10,7 +10,7 @@ Electron + React + TypeScript. Works fully offline in mock mode, with a local mo
 | --- | --- |
 | **Ecospace** (home screen) | Give tasks by typing or talking. Each runs in the background as a live card (steps, timer, *Needs you* when waiting for permission), up to 3 at once, and the rest queue. Finished tasks are saved with all their details. The floating orb opens a **mini Ecospace** |
 | **Chat** | Replies stream in live. Chat window plus a floating always-on-top orb (click: open/close, drag: move, right-click: menu) |
-| **Complete my text** | Writing an email or message in another app? Press **⌥Space** and pick one of 3 ways to finish your sentence; it's typed in for you. Only in apps you allow, never in password fields (macOS) |
+| **Complete my text** | Writing an email or message in another app? Press **⌃⌥Space** (Ctrl+Alt+Space on Windows) and pick one of 3 ways to finish your sentence; it's typed in for you. Only in apps you allow, never in password fields (macOS) |
 | **Live suggestions** | Chips appear while you type or speak: matching files in your approved folders, installed apps, reminder times, searches. Tab or click to use. Worked out locally in milliseconds, with no model call |
 | **Voice** | Mic button: your words appear **live in the message box** as you speak (transcribed on your computer by Whisper), and you can fix any word while the mic is on. Speaker button: replies are read aloud with your OS voices |
 | **Hands-free** | Press **⌘⇧Space** (Ctrl+Shift+Space) in any app, or say **“Hey [assistant name]”** (optional). You see your words live on the orb, get 2.5 s to *Send now* / *Edit*, then hear the answer. Safe actions can be approved by saying “yes” |
@@ -159,7 +159,7 @@ Settings → Commands → choose **Ask every time** (default: each command shows
 
 Settings → **Writing** → turn on **Complete my text**, then grant the **Accessibility** permission when asked (macOS lists it as pai, or "Electron"/your terminal when running from source).
 
-In a text box in an allowed app (Mail, Messages, Slack, WhatsApp, Discord and the main browsers by default), type a few words and press **⌥Space**. A popup by the cursor offers 3 continuations written by your model: press **1–3** (or ↑↓ and Enter) to insert one, **R** for new ones, **Esc** to close. In any other app it asks "Allow in <app>?" first.
+In a text box in an allowed app (Mail, Messages, Slack, WhatsApp, Discord and the main browsers by default), type a few words and press **⌃⌥Space** (Ctrl+Alt+Space on Windows). A popup by the cursor offers 3 continuations written by your model: press **1–3** (or ↑↓ and Enter) to insert one, **R** for new ones, **Esc** to close. In any other app it asks "Allow in <app>?" first.
 
 - It reads the text box only when you press the hotkey, and nothing is inserted until you pick.
 - Password fields, terminals and password managers are always refused.
