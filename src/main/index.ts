@@ -3,6 +3,7 @@
  * wires up IPC, and starts the reminder scheduler and proactive engine.
  * All privileged work (files, shell, models) happens in the main process.
  */
+
 import { app, globalShortcut, session } from 'electron'
 import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
@@ -16,7 +17,7 @@ import { stateStore } from './store/state'
 import { getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { lifecycle } from './windows/common'
 import { createFloatWindow, getFloatWindow } from './windows/floatWindow'
-
+import { createTray, destroyTray } from './windows/tray'
 // Log unexpected errors instead of letting Electron show a crash dialog.
 process.on('uncaughtException', (err) => console.error('[main] uncaught exception:', err))
 process.on('unhandledRejection', (err) => console.error('[main] unhandled rejection:', err))
@@ -63,6 +64,16 @@ app.whenReady().then(() => {
 
   showChat()
   createFloatWindow()
+    createTray({
+    talk: toggleVoice,
+    openEcospace,
+    isEnabled: () => stateStore.get().enabled,
+    isQuiet: () => stateStore.get().quietMode,
+    toggleChat,
+    setEnabled: (on) => void setEnabled(on),
+    setQuiet: (on) => void setQuiet(on),
+    quit: () => app.quit()
+  })
 
   // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
   if (!globalShortcut.register(VOICE_HOTKEY, toggleVoice)) {
@@ -83,6 +94,7 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   stopHelper()
+  destroyTray()
 })
 
 // The floating icon keeps the app alive; quit from its right-click menu.
