@@ -216,4 +216,4 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Licensed under the MIT License (see [LICENSE](LICENSE)). Third-party libraries and the NVIDIA Nemotron models keep their own licenses.
