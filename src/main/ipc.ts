@@ -135,12 +135,19 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
 
   // Profile
   handle(IPC.profileGet, 'any', () => ok(profileStore.get()))
-  handle(IPC.profileSave, 'chat', (raw) => {
+   handle(IPC.profileSave, 'chat', (raw) => {
     const profile = sanitizeProfile(raw)
     profile.approvedFolders = profile.approvedFolders.filter(isDir)
+    const previous = profileStore.get().compose.hotkey
     profileStore.set(profile)
+    const problem = syncComposeHotkey()
+    if (problem) {
+      // Another app owns this shortcut: keep the old one and say so.
+      profileStore.set({ ...profile, compose: { ...profile.compose, hotkey: previous } })
+      syncComposeHotkey()
+      return { ok: false, error: problem }
+    }
     resetSuggestIndex() // folders may have changed
-    syncComposeHotkey() // "Complete my text" may have been switched on or off
     refreshProactive()
     broadcast('data:changed', { what: 'profile' })
     return ok(profile)
