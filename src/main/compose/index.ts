@@ -14,13 +14,15 @@
  */
 import { globalShortcut } from 'electron'
 import {
-  
+  hotkeyLabelFor,
   isNeverComposeApp,
+  isValidHotkey,
   joinCompletion,
   parseCompletions,
   tailOf,
   type ComposeView
 } from '@shared/compose'
+
 import type { ComposeAccess } from '@shared/ipc'
 import { getConfig } from '../config'
 import { complete } from '../model'
@@ -31,7 +33,7 @@ import { isEnabled } from '../store/state'
 import { broadcast } from '../windows/common'
 import { hideCompose, mouseAnchor, showCompose, type Anchor } from '../windows/composeWindow'
 import type { FieldInfo } from './helper'
-const hotkeyLabel = platform.composeHotkey.label
+let hotkeyLabel = platform.composeHotkey.label
 
 const MODEL_TIMEOUT_MS = 25_000
 
@@ -252,20 +254,31 @@ export async function composeAccess(prompt: boolean): Promise<ComposeAccess> {
 }
 
 let openSettingsSection: ((section: string) => void) | null = null
-let registered = false
+let registeredAccel: string | null = null
 
-/** Register the hotkey only while the feature is on (so ${hotkeyLabel} stays free otherwise). */
-export function syncComposeHotkey(openSettings?: (section: string) => void): void {
+/**
+ * Register the shortcut to match Settings. Returns a message if it can't be used
+ * (invalid, or another app already owns it), otherwise null.
+ */
+export function syncComposeHotkey(openSettings?: (section: string) => void): string | null {
   if (openSettings) openSettingsSection = openSettings
-  const want = platform.supports.completeText && profileStore.get().compose.enabled
-  if (want && !registered) {
-    registered = globalShortcut.register(platform.composeHotkey.accelerator, () => void onComposeHotkey())
-    if (!registered) console.warn(`[compose] could not register ${platform.composeHotkey.accelerator}; another app may be using it`)
-  } else if (!want && registered) {
-    globalShortcut.unregister(platform.composeHotkey.accelerator)
-    registered = false
+  const settings = profileStore.get().compose
+  const want = platform.supports.completeText && settings.enabled
+  if (registeredAccel && (!want || registeredAccel !== settings.hotkey)) {
+    globalShortcut.unregister(registeredAccel)
+    registeredAccel = null
     cancelCompose()
   }
+  if (!want || registeredAccel) return null
+  if (!isValidHotkey(settings.hotkey)) return `"${settings.hotkey}" isn't a valid shortcut.`
+  const mac = process.platform === 'darwin'
+  if (!globalShortcut.register(settings.hotkey, () => void onComposeHotkey())) {
+    console.warn(`[compose] could not register ${settings.hotkey}; another app may be using it`)
+    return `${hotkeyLabelFor(settings.hotkey, mac)} is already used by another app. Pick a different shortcut.`
+  }
+  registeredAccel = settings.hotkey
+  hotkeyLabel = hotkeyLabelFor(settings.hotkey, mac)
+  return null
 }
 
-export const composeHotkeyActive = (): boolean => registered
+export const composeHotkeyActive = (): boolean => registeredAccel !== null

@@ -14,6 +14,30 @@ export const COMPOSE_HOTKEY = 'Control+Alt+Space'
 
 /** How to show COMPOSE_HOTKEY to people on each system. */
 export const composeHotkeyLabel = (mac: boolean): string => (mac ? '⌃⌥Space' : 'Ctrl+Alt+Space')
+const MODIFIER_NAMES = ['Control', 'Alt', 'Shift', 'Command', 'Super']
+
+/** A usable shortcut: one or more different modifiers, then one key (e.g. Control+Alt+K). */
+export function isValidHotkey(accel: unknown): accel is string {
+  if (typeof accel !== 'string' || accel.length > 60) return false
+  const parts = accel.split('+')
+  const key = parts[parts.length - 1]
+  const mods = parts.slice(0, -1)
+  return (
+    mods.length > 0 &&
+    mods.every((m) => MODIFIER_NAMES.includes(m)) &&
+    new Set(mods).size === mods.length &&
+    key.length > 0 &&
+    key.length <= 20
+  )
+}
+
+/** Show a shortcut the way each system writes it: ⌃⌥Space on Mac, Ctrl+Alt+Space elsewhere. */
+export function hotkeyLabelFor(accel: string, mac: boolean): string {
+  const macNames: Record<string, string> = { Control: '⌃', Alt: '⌥', Shift: '⇧', Command: '⌘', Super: '⌘' }
+  const winNames: Record<string, string> = { Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift', Command: 'Win', Super: 'Win' }
+  const parts = accel.split('+')
+  return mac ? parts.map((p) => macNames[p] ?? p).join('') : parts.map((p) => winNames[p] ?? p).join('+')
+}
 
 /** An app (by macOS bundle id) where "Complete my text" may read the focused text box. */
 export interface ComposeApp {
@@ -25,6 +49,8 @@ export interface ComposeSettings {
   /** Off by default: reading text in other apps is opt-in. */
   enabled: boolean
   /** Only these apps; anything else asks "Allow in <app>?" first. */
+    /** The shortcut that starts Complete my text (Electron format, e.g. Control+Alt+Space). */
+  hotkey: string
   apps: ComposeApp[]
   /** Allow sending the text to a cloud model (when .env points to one). Local models never need this. */
   allowCloud: boolean
@@ -85,7 +111,7 @@ export function isNeverComposeApp(id: string): boolean {
 }
 
 export function defaultComposeSettings(): ComposeSettings {
-  return { enabled: false, apps: DEFAULT_COMPOSE_APPS.map((a) => ({ ...a })), allowCloud: false }
+  return { enabled: false, apps: DEFAULT_COMPOSE_APPS.map((a) => ({ ...a })), allowCloud: false, hotkey: COMPOSE_HOTKEY }
 }
 
 export const MAX_COMPLETIONS = 3
@@ -165,6 +191,8 @@ export function joinCompletion(before: string, completion: string): string {
 }
 
 /** Clean up stored settings (from disk or the UI). */
+
+    /** Clean up stored settings (from disk or the UI). */
 export function sanitizeCompose(raw: unknown): ComposeSettings {
   const d = defaultComposeSettings()
   if (typeof raw !== 'object' || raw === null) return d
@@ -174,13 +202,13 @@ export function sanitizeCompose(raw: unknown): ComposeSettings {
     for (const a of r.apps as unknown[]) {
       const id = typeof (a as ComposeApp)?.id === 'string' ? (a as ComposeApp).id.trim().slice(0, 200) : ''
       const name = typeof (a as ComposeApp)?.name === 'string' ? (a as ComposeApp).name.trim().slice(0, 80) : ''
-            if (id && !isNeverComposeApp(id) && !apps.some((x) => x.id === id)) apps.push({ id, name: name || id })
-  }
+      if (id && !isNeverComposeApp(id) && !apps.some((x) => x.id === id)) apps.push({ id, name: name || id })
+    }
   }
   return {
     enabled: r.enabled === true,
     apps: Array.isArray(r.apps) ? apps : d.apps,
-    allowCloud: r.allowCloud === true
+    allowCloud: r.allowCloud === true,
+    hotkey: isValidHotkey(r.hotkey) ? r.hotkey : d.hotkey
   }
 }
-
