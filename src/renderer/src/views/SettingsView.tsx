@@ -10,8 +10,8 @@
  * Switches in "General" (on/off, quiet mode) apply instantly. Everything else
  * is edited locally and saved with the Save bar.
  */
-import { useEffect, useState, type ReactNode } from 'react'
-import { DEFAULT_COMPOSE_APPS, composeHotkeyLabel } from '@shared/compose'
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { DEFAULT_COMPOSE_APPS, hotkeyLabelFor, isValidHotkey } from '@shared/compose'
 import { VOICE_HOTKEY, type AppState, type ComposeAccess, type Profile, type PublicConfig, type SkillInfo } from '@shared/ipc'
 import { FoldersField, IdentityFields, PermissionsField, SkillsField } from '../components/ProfileFields'
 import { Toggle } from '../components/Toggle'
@@ -37,7 +37,7 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number]['id']
 
 const isMac = navigator.userAgent.includes('Mac')
-const composeKey = composeHotkeyLabel(isMac)
+
 const hotkeyLabel = isMac ? '⌘⇧Space' : VOICE_HOTKEY.replace('CommandOrControl', 'Ctrl').replace(/\+/g, '+')
 
 function loadSection(): Section {
@@ -319,10 +319,11 @@ function NotificationsCard({ name }: { name: string }) {
 
 const isLocalModel = (config: PublicConfig | null) => !config || config.mode === 'mock' || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(config.baseURL)
 
-/** "Complete my text": ⌃⌥Space in other apps. */
+/** "Complete my text": a shortcut you choose, in other apps. */
 function WritingSection({ profile, set, config, name }: { profile: Profile; set: (p: Partial<Profile>) => void; config: PublicConfig | null; name: string }) {
   const [access, setAccess] = useState<ComposeAccess | null>(null)
   const compose = profile.compose
+  const composeKey = hotkeyLabelFor(compose.hotkey, isMac)
   const setCompose = (patch: Partial<Profile['compose']>) => set({ compose: { ...compose, ...patch } })
   const check = (prompt = false) => window.pai.composeAccess(prompt).then((r) => r.ok && setAccess(r.value))
 
@@ -335,17 +336,23 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
   }, [])
 
   const local = isLocalModel(config)
- const unavailable = access?.available === false
+  const unavailable = access?.available === false
   return (
     <Page title="Writing" sub={`Let ${name} help finish what you're typing in other apps, like an email or a message.`}>
       <Card>
+        <Row
+          label="Shortcut"
+          help="Press this in a text box to get suggestions. Needs at least one modifier key. Alt+Space is taken by the Windows window menu."
+        >
+          <HotkeyField value={compose.hotkey} mac={isMac} onChange={(accel) => setCompose({ hotkey: accel })} />
+        </Row>
         <Row
           label={<>Complete my text: <kbd className="key">{composeKey}</kbd></>}
           help={
             unavailable
               ? isMac
                 ? "The text helper isn't built. Install Xcode's command line tools (xcode-select --install) and restart."
-                : 'Available on macOS only for now.'
+                : 'The Windows text helper is not built yet. Run npm run build once, then restart.'
               : `In a text box in an allowed app, press ${composeKey} and pick one of 3 ways to finish your sentence. ${name} reads the text only when you press it.`
           }
         >
@@ -403,6 +410,43 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
         </ul>
       </Card>
     </Page>
+  )
+}
+
+function HotkeyField({ value, mac, onChange }: { value: string; mac: boolean; onChange: (accel: string) => void }) {
+  const [capturing, setCapturing] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+
+  function capture(e: KeyboardEvent<HTMLButtonElement>) {
+    if (!capturing) return
+    e.preventDefault()
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return // wait for the real key
+    const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Command'].filter(Boolean) as string[]
+    const key = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key
+    const accel = [...mods, key].join('+')
+    setCapturing(false)
+    if (!isValidHotkey(accel)) return setNote('Use at least one modifier key (Ctrl, Alt, Shift or ⌘).')
+    if (accel === 'Alt+Space') return setNote('Alt+Space opens the Windows window menu, so pick another.')
+    setNote(null)
+    onChange(accel)
+  }
+
+  return (
+    <div className="hotkey-field">
+      <kbd className="key">{hotkeyLabelFor(value, mac)}</kbd>
+      <button
+        className="btn-ghost"
+        onClick={() => {
+          setCapturing(true)
+          setNote(null)
+        }}
+        onKeyDown={capture}
+        onBlur={() => setCapturing(false)}
+      >
+        {capturing ? 'Press new keys…' : 'Change'}
+      </button>
+      {note && <p className="card-foot">{note}</p>}
+    </div>
   )
 }
 
