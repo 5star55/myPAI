@@ -32,7 +32,7 @@ import { chooseCompletion, composeAccess, composeAction, cancelCompose, syncComp
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
 import { clearFinishedTasks, deleteTask, listTasks, replyToTask, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
 import type { FloatSize } from '@shared/ipc'
-
+import { hideLauncher } from './windows/launcherWindow'
 type From = 'chat' | 'float' | 'compose' | 'any'
 
 function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
@@ -135,6 +135,10 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
 
   // Profile
   handle(IPC.profileGet, 'any', () => ok(profileStore.get()))
+    handle(IPC.launcherHide, 'any', () => {
+    hideLauncher()
+    return ok(undefined)
+  })
   handle(IPC.profileSave, 'chat', (raw) => {
     const profile = sanitizeProfile(raw)
     profile.approvedFolders = profile.approvedFolders.filter(isDir)
@@ -263,6 +267,7 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.taskClearFinished, 'chat', () => ok(clearFinishedTasks()))
   handle(IPC.openEcospace, 'any', () => ok(openEcospace()))
   handle(IPC.askInChat, 'any', (text) => {
+        console.log('[main] askInChat received', typeof text)
     if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Nothing to ask.' }
     return ok(askInChat(text.trim().slice(0, 4000)))
   })

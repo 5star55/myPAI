@@ -17,7 +17,7 @@ export function secureWebPreferences(): BrowserWindowConstructorOptions['webPref
 }
 
 /** Load the React app. `view` selects the screen (e.g. "float"). */
-export function loadRenderer(win: BrowserWindow, view: 'main' | 'float' | 'compose'): void {
+export function loadRenderer(win: BrowserWindow, view: 'main' | 'float' | 'compose' | 'launcher'): void {
   // Security: windows never navigate away; https links open in the normal browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url)

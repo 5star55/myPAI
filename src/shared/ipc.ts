@@ -460,7 +460,8 @@ export const IPC = {
   composeChoose: 'compose:choose',
   composeCancel: 'compose:cancel',
   composeAction: 'compose:action',
-  composeAccess: 'compose:access'
+  composeAccess: 'compose:access',
+    launcherHide: 'launcher:hide'
 } as const
 
 /** Push events (main -> renderer) and their payloads. */
@@ -488,8 +489,11 @@ export interface EventMap {
   'ui:navigate': { tab: 'ecospace' | 'chat' | 'settings'; section?: string }
   /** A reminder is due (the orb shows a card; the main window reads it aloud). */
   'reminder:fired': { id: string; message: string }
+    /** Quick launcher: focus its input each time it opens. */
+   'launcher:focus': Record<string, never>
   /** What the "Complete my text" popup shows (sent to the popup only). */
   'compose:view': ComposeView
+ 
 }
 export type EventName = keyof EventMap
 export const EVENT_NAMES: EventName[] = [
@@ -508,7 +512,8 @@ export const EVENT_NAMES: EventName[] = [
   'task:removed',
   'ui:navigate',
   'reminder:fired',
-  'compose:view'
+  'compose:view',
+  'launcher:focus'
 ]
 
 /** The API the preload script exposes on window.pai. */
@@ -633,6 +638,8 @@ export interface PaiApi {
   showFloatMenu(): Promise<Result<void>>
 
   /** Subscribe to a push event. Returns an unsubscribe function. */
+    /** Quick launcher: close it (Esc). */
+  launcherHide(): Promise<Result<void>>
   on<E extends EventName>(event: E, cb: (payload: EventMap[E]) => void): () => void
 }
 
