@@ -3,12 +3,13 @@
  * wires up IPC, and starts the reminder scheduler and proactive engine.
  * All privileged work (files, shell, models) happens in the main process.
  */
+import { existsSync, statSync } from 'node:fs'
 import { app, globalShortcut, session } from 'electron'
 import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
 import { syncComposeHotkey } from './compose'
 import { stopHelper } from './compose/helper'
-import { openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { askInChat, openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -24,9 +25,30 @@ process.on('unhandledRejection', (err) => console.error('[main] unhandled reject
 // Optional: keep data somewhere else (handy for testing with a throwaway profile).
 if (process.env.PAI_DATA_DIR) app.setPath('userData', process.env.PAI_DATA_DIR)
 
-// Only one copy of pai at a time; a second launch focuses the first.
-if (!app.requestSingleInstanceLock()) app.quit()
-app.on('second-instance', () => showChat())
+/** Files named on the command line, e.g. from "Send to pai" in Explorer. Folders and flags are ignored. */
+function filesFromArgs(argv: string[]): string[] {
+  return argv.slice(1).filter((a) => {
+    try {
+      return !a.startsWith('-') && existsSync(a) && statSync(a).isFile()
+    } catch {
+      return false
+    }
+  })
+}
+
+/** Ask the chat to summarize each file. Uses the normal chat flow, so the usual permissions apply. */
+function sendFiles(files: string[]): void {
+   for (const f of files) askInChat(`Please summarize the document at ${f}. Use the summarize_document tool on that exact path.`)
+   }
+// Only one copy of pai at a time. A second launch (for example, with a file path) hands its arguments to this copy.
+const isPrimary = app.requestSingleInstanceLock()
+if (!isPrimary) app.quit()
+
+app.on('second-instance', (_event, argv) => {
+  const files = filesFromArgs(argv)
+  if (files.length) sendFiles(files)
+  else showChat()
+})
 
 app.whenReady().then(() => {
   const cfg = getConfig()
@@ -62,6 +84,7 @@ app.whenReady().then(() => {
   })
 
   showChat()
+  if (isPrimary) sendFiles(filesFromArgs(process.argv))
   createFloatWindow()
 
   // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
@@ -89,4 +112,3 @@ app.on('will-quit', () => {
 app.on('window-all-closed', () => {
   if (!getChatWindow() && !getFloatWindow()) app.quit()
 })
-
