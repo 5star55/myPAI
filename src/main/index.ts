@@ -16,7 +16,7 @@ import { stateStore } from './store/state'
 import { getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { lifecycle } from './windows/common'
 import { createFloatWindow, getFloatWindow } from './windows/floatWindow'
-
+import { LAUNCHER_HOTKEY, toggleLauncher } from './windows/launcherWindow'
 // Log unexpected errors instead of letting Electron show a crash dialog.
 process.on('uncaughtException', (err) => console.error('[main] uncaught exception:', err))
 process.on('unhandledRejection', (err) => console.error('[main] unhandled rejection:', err))
@@ -64,9 +64,13 @@ app.whenReady().then(() => {
   showChat()
   createFloatWindow()
 
-  // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
+    // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
   if (!globalShortcut.register(VOICE_HOTKEY, toggleVoice)) {
     console.warn(`[voice] could not register ${VOICE_HOTKEY}; another app may be using it`)
+  }
+  // Quick launcher: the search bar (A8).
+  if (!globalShortcut.register(LAUNCHER_HOTKEY, toggleLauncher)) {
+    console.warn(`[launcher] could not register ${LAUNCHER_HOTKEY}; another app may be using it`)
   }
   // "Complete my text" (⌃⌥Space in other apps), only while switched on in Settings.
   syncComposeHotkey(openSettings)
