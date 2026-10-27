@@ -8,7 +8,8 @@ import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
 import { syncComposeHotkey } from './compose'
 import { stopHelper } from './compose/helper'
-import { openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { askInChat, openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { filesFromArgs, summarizeRequest } from './sendTo'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -24,9 +25,20 @@ process.on('unhandledRejection', (err) => console.error('[main] unhandled reject
 // Optional: keep data somewhere else (handy for testing with a throwaway profile).
 if (process.env.PAI_DATA_DIR) app.setPath('userData', process.env.PAI_DATA_DIR)
 
-// Only one copy of pai at a time; a second launch focuses the first.
-if (!app.requestSingleInstanceLock()) app.quit()
-app.on('second-instance', () => showChat())
+/** Ask the chat to summarize files from "Send to pai". Uses the normal chat flow, so the usual permissions apply. */
+function sendFiles(files: string[]): void {
+  if (files.length) askInChat(summarizeRequest(files))
+}
+
+// Only one copy of pai at a time. A second launch (for example, with a file path) hands its arguments to this copy.
+const isPrimary = app.requestSingleInstanceLock()
+if (!isPrimary) app.quit()
+
+app.on('second-instance', (_event, argv) => {
+  const files = filesFromArgs(argv)
+  if (files.length) sendFiles(files)
+  else showChat()
+})
 
 // Windows routes notification clicks and buttons back to the app by this id.
 if (process.platform === 'win32') app.setAppUserModelId('com.pai.app')
@@ -65,6 +77,7 @@ app.whenReady().then(() => {
   })
 
   showChat()
+  if (isPrimary) sendFiles(filesFromArgs(process.argv))
   createFloatWindow()
 
   // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
@@ -92,4 +105,3 @@ app.on('will-quit', () => {
 app.on('window-all-closed', () => {
   if (!getChatWindow() && !getFloatWindow()) app.quit()
 })
-
