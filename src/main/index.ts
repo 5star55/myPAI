@@ -3,13 +3,13 @@
  * wires up IPC, and starts the reminder scheduler and proactive engine.
  * All privileged work (files, shell, models) happens in the main process.
  */
-import { existsSync, statSync } from 'node:fs'
 import { app, globalShortcut, session } from 'electron'
 import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
 import { syncComposeHotkey } from './compose'
 import { stopHelper } from './compose/helper'
 import { askInChat, openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { filesFromArgs, summarizeRequest } from './sendTo'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -25,21 +25,11 @@ process.on('unhandledRejection', (err) => console.error('[main] unhandled reject
 // Optional: keep data somewhere else (handy for testing with a throwaway profile).
 if (process.env.PAI_DATA_DIR) app.setPath('userData', process.env.PAI_DATA_DIR)
 
-/** Files named on the command line, e.g. from "Send to pai" in Explorer. Folders and flags are ignored. */
-function filesFromArgs(argv: string[]): string[] {
-  return argv.slice(1).filter((a) => {
-    try {
-      return !a.startsWith('-') && existsSync(a) && statSync(a).isFile()
-    } catch {
-      return false
-    }
-  })
+/** Ask the chat to summarize files from "Send to pai". Uses the normal chat flow, so the usual permissions apply. */
+function sendFiles(files: string[]): void {
+  if (files.length) askInChat(summarizeRequest(files))
 }
 
-/** Ask the chat to summarize each file. Uses the normal chat flow, so the usual permissions apply. */
-function sendFiles(files: string[]): void {
-   for (const f of files) askInChat(`Please summarize the document at ${f}. Use the summarize_document tool on that exact path.`)
-   }
 // Only one copy of pai at a time. A second launch (for example, with a file path) hands its arguments to this copy.
 const isPrimary = app.requestSingleInstanceLock()
 if (!isPrimary) app.quit()
