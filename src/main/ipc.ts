@@ -223,10 +223,11 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.skillsShowFolder, 'chat', async () => ok(await showUserSkillsFolder()))
 
   // Voice input (local Whisper)
-  handle(IPC.micAccess, 'chat', async () => {
+  handle(IPC.micAccess, 'chat', async (prompt) => {
     // Automated tests run with Chromium's fake microphone; there is no real mic to ask about.
     if (process.platform !== 'darwin' || app.commandLine.hasSwitch('use-fake-device-for-media-stream')) return ok(true)
     if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return ok(true)
+    if (prompt === false) return ok(false)
     return ok(await systemPreferences.askForMediaAccess('microphone'))
   })
   handle(IPC.speechWarmUp, 'chat', () => ok(warmUpSpeech()))
