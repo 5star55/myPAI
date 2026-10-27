@@ -28,6 +28,8 @@ const STEP_MS: Record<Exclude<Repeat, 'none'>, number> = {
 }
 
 let timer: NodeJS.Timeout | null = null
+/** Shown notifications. Electron stops sending click/button events once one is garbage-collected. */
+const live = new Set<Notification>()
 
 /** Show a native notification. With onSnooze, it gets a "Snooze" button. Returns false if the OS doesn't support notifications. */
 export function notify(title: string, body: string, onSnooze?: () => void): boolean {
@@ -41,9 +43,11 @@ export function notify(title: string, body: string, onSnooze?: () => void): bool
     actions: onSnooze ? [{ type: 'button', text: `Snooze ${SNOOZE_MINUTES} min` }] : []
   })
   n.on('click', () => showChat())
-  n.on('action', (_event, index) => {
-    if (index === 0) onSnooze?.()
+  n.on('action', (details) => {
+    if (details.actionIndex === 0) onSnooze?.()
   })
+  n.on('close', () => live.delete(n))
+  live.add(n)
   n.show()
   return true
 }
