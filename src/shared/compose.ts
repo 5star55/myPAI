@@ -14,7 +14,11 @@ export const COMPOSE_HOTKEY = 'Control+Alt+Space'
 
 /** How to show COMPOSE_HOTKEY to people on each system. */
 export const composeHotkeyLabel = (mac: boolean): string => (mac ? '⌃⌥Space' : 'Ctrl+Alt+Space')
+
 const MODIFIER_NAMES = ['Control', 'Alt', 'Shift', 'Command', 'Super']
+/** Keys Electron accepts in an accelerator: letters, digits, F1–F24, named keys, numpad keys and single punctuation. */
+const KEY_NAME =
+  /^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|Space|Tab|Backspace|Delete|Insert|Return|Enter|Up|Down|Left|Right|Home|End|PageUp|PageDown|Escape|Esc|Plus|PrintScreen|num[0-9]|numdec|numadd|numsub|nummult|numdiv|[^\sA-Za-z0-9+])$/
 
 /** A usable shortcut: one or more different modifiers, then one key (e.g. Control+Alt+K). */
 export function isValidHotkey(accel: unknown): accel is string {
@@ -26,8 +30,7 @@ export function isValidHotkey(accel: unknown): accel is string {
     mods.length > 0 &&
     mods.every((m) => MODIFIER_NAMES.includes(m)) &&
     new Set(mods).size === mods.length &&
-    key.length > 0 &&
-    key.length <= 20
+    KEY_NAME.test(key)
   )
 }
 
@@ -48,9 +51,9 @@ export interface ComposeApp {
 export interface ComposeSettings {
   /** Off by default: reading text in other apps is opt-in. */
   enabled: boolean
-  /** Only these apps; anything else asks "Allow in <app>?" first. */
-    /** The shortcut that starts Complete my text (Electron format, e.g. Control+Alt+Space). */
+  /** The shortcut that starts Complete my text (Electron format, e.g. Control+Alt+Space). */
   hotkey: string
+  /** Only these apps; anything else asks "Allow in <app>?" first. */
   apps: ComposeApp[]
   /** Allow sending the text to a cloud model (when .env points to one). Local models never need this. */
   allowCloud: boolean
@@ -191,8 +194,6 @@ export function joinCompletion(before: string, completion: string): string {
 }
 
 /** Clean up stored settings (from disk or the UI). */
-
-    /** Clean up stored settings (from disk or the UI). */
 export function sanitizeCompose(raw: unknown): ComposeSettings {
   const d = defaultComposeSettings()
   if (typeof raw !== 'object' || raw === null) return d

@@ -413,6 +413,8 @@ function WritingSection({ profile, set, config, name }: { profile: Profile; set:
   )
 }
 
+const ARROWS: Record<string, string> = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right' }
+
 function HotkeyField({ value, mac, onChange }: { value: string; mac: boolean; onChange: (accel: string) => void }) {
   const [capturing, setCapturing] = useState(false)
   const [note, setNote] = useState<string | null>(null)
@@ -422,10 +424,11 @@ function HotkeyField({ value, mac, onChange }: { value: string; mac: boolean; on
     e.preventDefault()
     if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return // wait for the real key
     const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Command'].filter(Boolean) as string[]
-    const key = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key
+    // Use the physical key: on a Mac, Option+K reports e.key as "˚".
+    const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : (ARROWS[e.key] ?? (e.key === ' ' ? 'Space' : e.key))
     const accel = [...mods, key].join('+')
     setCapturing(false)
-    if (!isValidHotkey(accel)) return setNote('Use at least one modifier key (Ctrl, Alt, Shift or ⌘).')
+    if (!isValidHotkey(accel)) return setNote('Use at least one modifier key (Ctrl, Alt, Shift or ⌘) and a letter, number or named key.')
     if (accel === 'Alt+Space') return setNote('Alt+Space opens the Windows window menu, so pick another.')
     setNote(null)
     onChange(accel)
