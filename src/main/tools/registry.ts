@@ -25,7 +25,7 @@ export const ALL_TOOLS: Tool[] = [
   organizeFolder,
   summarizeDocument,
   openApp,
-   openSettingsPage,
+  openSettingsPage,
   setReminder,
   listRemindersTool,
   webSearch,
