@@ -59,7 +59,7 @@ const GROUPS: { tools: string[]; words: RegExp }[] = [
   {
     tools: ['list_files', 'read_file', 'create_file', 'create_folder', 'move_file', 'rename_file', 'delete_file', 'organize_folder', 'summarize_document'],
     words: /\b(files?|folders?|director(y|ies)|downloads|desktop|documents|pictures|rename|move|copy|delete|trash|remove|organi[sz]e|tidy|clean ?up|sort|create|make|write|save|read|open|summari[sz]e|pdf|docx?|txt|rtf|csv|notes?)\b|~\/|\/Users\//i
-  },  
+  },
   { tools: ['open_settings_page'], words: /\bsettings?\b/i },
   { tools: ['open_app'], words: /\b(open|launch|start|app|application)\b/i },
   { tools: ['set_reminder', 'list_reminders'], words: /\b(remind|reminders?|alarm|timer|schedule|tomorrow|tonight|at \d|in \d+ ?(min|minute|hour|h)s?)\b/i },
