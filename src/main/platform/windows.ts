@@ -1,18 +1,21 @@
-import { COMPOSE_HOTKEY, composeHotkeyLabel } from '@shared/compose'
 import { helperAvailable, insertText, isTrusted, readField, stopHelper } from '../compose/helper'
 import type { Platform } from './types'
 
 export const windowsPlatform: Platform = {
   id: 'windows',
-  supports: { completeText: true },
-  composeHotkey: { accelerator: COMPOSE_HOTKEY, label: composeHotkeyLabel(false) }, // A5 will make this configurable
+  // Only true when the helper exists, so a missing build shows the "not built yet" message.
+  get supports() {
+    return { completeText: helperAvailable() }
+  },
+  // Alt+Space opens the window menu on Windows, so use Ctrl+Alt+Space (A5 will make this configurable).
+  composeHotkey: { accelerator: 'Ctrl+Alt+Space', label: 'Ctrl+Alt+Space' },
   text: {
     available: helperAvailable,
     unavailableMessage: () =>
-      "The Windows text helper isn't built yet. In the project folder run: dotnet publish native/winhelper -c Release -r win-x64 --self-contained false -o native/bin   then restart pai.",
+      'The Windows text helper is not built yet. Install the .NET 10 SDK, then run npm run build (or npm start) once.',
     readField,
     insertText,
-    isTrusted, // Windows has no permission prompt for UI Automation; the helper just answers yes
+    isTrusted,
     openPermissionSettings: async () => {},
     stop: stopHelper
   }
