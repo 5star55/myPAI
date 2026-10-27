@@ -5,6 +5,7 @@
 import type { Profile } from '@shared/ipc'
 import type { ToolSpec } from '../model'
 import { openApp } from './apps'
+import { openSettingsPage } from './settingsPage'
 import { summarizeDocument } from './documents'
 import { createFile, createFolder, deleteFile, listFiles, moveFile, organizeFolder, readFile, renameFile } from './files'
 import { recallMemory, saveMemory } from './memory'
@@ -24,6 +25,7 @@ export const ALL_TOOLS: Tool[] = [
   organizeFolder,
   summarizeDocument,
   openApp,
+   openSettingsPage,
   setReminder,
   listRemindersTool,
   webSearch,

@@ -38,6 +38,7 @@ const PATTERNS: { tool: string; re: RegExp; args: (m: RegExpMatchArray) => Recor
   },
   { tool: 'delete_file', re: /\bdelete\s+(.+)$/i, args: (m) => ({ path: clean(m[1]) }) },
   { tool: 'summarize_document', re: /\bsummari[sz]e\s+(.+)$/i, args: (m) => ({ path: clean(m[1]) }) },
+    { tool: 'open_settings_page', re: /\b(?:open|launch)\s+(?:the\s+)?(\w+)\s+(?:settings?|settings page)\b/i, args: (m) => ({ page: m[1].toLowerCase() }) },
   { tool: 'open_app', re: /\b(?:open|launch)\s+(?:the\s+)?(?:app\s+)?(.+)$/i, args: (m) => ({ name: clean(m[1]) }) },
   {
     tool: 'set_reminder',
