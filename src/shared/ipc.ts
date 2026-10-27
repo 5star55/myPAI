@@ -568,8 +568,8 @@ export interface PaiApi {
 
   respondOffer(id: string, choice: OfferChoice): Promise<Result<void>>
 
-  /** Ask the OS for microphone access (macOS shows a prompt the first time). */
-  requestMic(): Promise<Result<boolean>>
+  /** Ask the OS for microphone access (macOS shows a prompt the first time). With prompt false, only reports the current status. */
+  requestMic(prompt?: boolean): Promise<Result<boolean>>
   /** Start loading the local speech model in the background. */
   warmUpSpeech(): Promise<Result<void>>
   /** Transcribe mono 16 kHz audio locally. Returns the text. */
