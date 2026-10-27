@@ -3,7 +3,7 @@
  *
  * A precise timer is set for the next reminder (plus a 30 s safety check, for
  * sleep/wake). When one is due:
- *   - a native notification (with sound), and
+ *   - a native notification (with sound and a Snooze button), and
  *   - a "reminder:fired" event: the floating orb shows a card with Done /
  *     Snooze, plays a chime, and the main window reads it aloud. This works even
  *     when the OS blocks or silences notifications.
@@ -28,12 +28,26 @@ const STEP_MS: Record<Exclude<Repeat, 'none'>, number> = {
 }
 
 let timer: NodeJS.Timeout | null = null
+/** Shown notifications. Electron stops sending click/button events once one is garbage-collected. */
+const live = new Set<Notification>()
 
-/** Show a native notification. Returns false if the OS doesn't support them. */
-export function notify(title: string, body: string): boolean {
+/** Show a native notification. With onSnooze, it gets a "Snooze" button. Returns false if the OS doesn't support notifications. */
+export function notify(title: string, body: string, onSnooze?: () => void): boolean {
   if (!Notification.isSupported()) return false
-  const n = new Notification({ title, body, sound: 'Glass', urgency: 'critical', timeoutType: 'never' })
+  const n = new Notification({
+    title,
+    body,
+    sound: 'Glass',
+    urgency: 'critical',
+    timeoutType: 'never',
+    actions: onSnooze ? [{ type: 'button', text: `Snooze ${SNOOZE_MINUTES} min` }] : []
+  })
   n.on('click', () => showChat())
+  n.on('action', (details) => {
+    if (details.actionIndex === 0) onSnooze?.()
+  })
+  n.on('close', () => live.delete(n))
+  live.add(n)
   n.show()
   return true
 }
@@ -41,7 +55,7 @@ export function notify(title: string, body: string): boolean {
 function fire(r: Reminder): void {
   const name = profileStore.get().assistantName
   console.log(`[reminder] ${r.message}`)
-  notify(`${name} reminder`, r.message)
+  notify(`${name} reminder`, r.message, () => snoozeReminder(r.message))
   broadcast('reminder:fired', { id: r.id, message: r.message })
 }
 

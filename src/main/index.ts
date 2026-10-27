@@ -28,6 +28,9 @@ if (process.env.PAI_DATA_DIR) app.setPath('userData', process.env.PAI_DATA_DIR)
 if (!app.requestSingleInstanceLock()) app.quit()
 app.on('second-instance', () => showChat())
 
+// Windows routes notification clicks and buttons back to the app by this id.
+if (process.platform === 'win32') app.setAppUserModelId('com.pai.app')
+
 app.whenReady().then(() => {
   const cfg = getConfig()
   console.log(`[main] pai starting. MODEL_MODE=${cfg.mode}, base URL=${cfg.baseURL}`)
