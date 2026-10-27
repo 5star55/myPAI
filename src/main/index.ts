@@ -3,7 +3,6 @@
  * wires up IPC, and starts the reminder scheduler and proactive engine.
  * All privileged work (files, shell, models) happens in the main process.
  */
-
 import { app, globalShortcut, session } from 'electron'
 import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
@@ -19,6 +18,7 @@ import { getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { lifecycle } from './windows/common'
 import { createFloatWindow, getFloatWindow } from './windows/floatWindow'
 import { createTray, destroyTray } from './windows/tray'
+
 // Log unexpected errors instead of letting Electron show a crash dialog.
 process.on('uncaughtException', (err) => console.error('[main] uncaught exception:', err))
 process.on('unhandledRejection', (err) => console.error('[main] unhandled rejection:', err))
@@ -80,7 +80,7 @@ app.whenReady().then(() => {
   showChat()
   if (isPrimary) sendFiles(filesFromArgs(process.argv))
   createFloatWindow()
-    createTray({
+  createTray({
     talk: toggleVoice,
     openEcospace,
     isEnabled: () => stateStore.get().enabled,

@@ -28,6 +28,7 @@ import { notify, scheduleNextReminder, snoozeReminder } from './reminders/schedu
 import { ensureChatWindow, getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { broadcast } from './windows/common'
 import { getComposeWindow } from './windows/composeWindow'
+import { refreshTray } from './windows/tray'
 import { platform } from './platform'
 import { chooseCompletion, checkComposeHotkey, composeAccess, composeAction, cancelCompose, syncComposeHotkey } from './compose'
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
@@ -72,6 +73,7 @@ export function setEnabled(enabled: boolean): AppState {
     denyAllPending() // close open permission dialogs as "deny"
   } else resumeTasks()
   refreshProactive()
+  refreshTray()
   broadcast('state:changed', state)
   return state
 }
@@ -79,6 +81,7 @@ export function setEnabled(enabled: boolean): AppState {
 export function setQuiet(quietMode: boolean): AppState {
   const state = stateStore.update((s) => ({ ...s, quietMode }))
   refreshProactive()
+  refreshTray()
   broadcast('state:changed', state)
   return state
 }
