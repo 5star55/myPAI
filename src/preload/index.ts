@@ -50,7 +50,7 @@ const api: PaiApi = {
 
   respondOffer: (id, choice) => call(IPC.offerRespond, id, choice),
 
-  requestMic: () => call(IPC.micAccess),
+  requestMic: (prompt = true) => call(IPC.micAccess, prompt),
   warmUpSpeech: () => call(IPC.speechWarmUp),
   transcribe: (audio) => call(IPC.speechTranscribe, audio),
   suggest: (text) => call(IPC.suggest, text),
