@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { helperAvailable } from '../src/main/compose/helper'
 import { pickPlatform } from '../src/main/platform'
 import { isNeverComposeApp } from '../src/shared/compose'
 
@@ -11,7 +12,8 @@ describe('platform layer', () => {
 
   it('says what each system supports', () => {
     expect(pickPlatform('darwin').supports.completeText).toBe(true)
-    expect(pickPlatform('win32').supports.completeText).toBe(true)
+    // Windows only offers it once the text helper has been built.
+    expect(pickPlatform('win32').supports.completeText).toBe(helperAvailable())
     expect(pickPlatform('linux').supports.completeText).toBe(false)
   })
 
