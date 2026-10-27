@@ -216,6 +216,17 @@ In a text box in an allowed app (Mail, Messages, Slack, WhatsApp, Discord and th
   - macOS: `native/axhelper` (Swift, Accessibility API). Needs Xcode's command line tools (`xcode-select --install`).
   - Windows: `native/winhelper` (C#, UI Automation). Needs the .NET 10 SDK. Works in Notepad and other native text boxes; Chrome and Edge are not supported yet.
 
+## Send to pai (Windows)
+
+Right-click a document in Explorer → **Send to** → **pai**, and pai opens the chat and summarizes it (the usual permission dialog applies; the file must be in an approved folder). Supported types are the ones `summarize_document` reads (`.txt`, `.md`, `.csv`, `.json`, `.html`…); up to 5 files at a time.
+
+To add the menu entry, press Win+R, run `shell:sendto`, and create a shortcut there named **pai**:
+
+- Installed pai: target `pai.exe`.
+- From source: target `"<project>\node_modules\electron\dist\electron.exe" "<project>"`, replacing `<project>` with the full project path. Run `npm run build` first.
+
+If pai is already running, the file goes to the open window; otherwise pai starts and then asks.
+
 ## Saved chats
 
 Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Library/Application Support/pai/conversations`). Use the ☰ panel in the chat to search, reopen, rename or delete them. They never leave your computer.

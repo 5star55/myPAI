@@ -9,7 +9,7 @@ import { complete } from '../model'
 import { checkPath } from '../security/allowlist'
 import { needString, outsideOf, type Tool } from './types'
 
-const TEXT_TYPES = ['.txt', '.md', '.markdown', '.csv', '.json', '.log', '.html', '.htm', '.xml', '.yaml', '.yml', '.rtf', '.ts', '.js', '.py']
+export const TEXT_TYPES = ['.txt', '.md', '.markdown', '.csv', '.json', '.log', '.html', '.htm', '.xml', '.yaml', '.yml', '.rtf', '.ts', '.js', '.py']
 const MAX_BYTES = 1_000_000
 const MAX_CHARS = 15_000
 
