@@ -1,10 +1,11 @@
 /**
- * "Generate your AI" — first-run wizard. Saves the profile, which is then
+ * "Generate your AI": first-run wizard. Saves the profile, which is then
  * used to build the system prompt, the tool list and the allowlist.
  */
 import { useEffect, useState } from 'react'
 import type { Profile, SkillInfo } from '@shared/ipc'
 import { Orb } from '../components/Orb'
+import { PermissionChecklist } from '../components/PermissionChecklist'
 import { FoldersField, IdentityFields, PermissionsField, ProactiveField, SkillsField } from '../components/ProfileFields'
 
 const STEPS = ['Identity', 'Folders', 'Permissions', 'Skills'] as const
@@ -75,7 +76,12 @@ export function Setup({ initial, onDone }: { initial: Profile; onDone: (p: Profi
       <section className="glass panel setup-panel">
         {step === 0 && <IdentityFields profile={profile} set={set} />}
         {step === 1 && <FoldersField profile={profile} set={set} />}
-        {step === 2 && <PermissionsField profile={profile} set={set} />}
+        {step === 2 && (
+          <>
+            <PermissionsField profile={profile} set={set} />
+            <PermissionChecklist />
+          </>
+        )}
         {step === 3 && (
           <>
             <SkillsField profile={profile} set={set} skills={skills} />
