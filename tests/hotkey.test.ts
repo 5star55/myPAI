@@ -14,6 +14,13 @@ describe('Complete my text shortcut', () => {
     expect(isValidHotkey('Control+Control+K')).toBe(false)
   })
 
+  it('only accepts keys Electron knows', () => {
+    expect(isValidHotkey('Control+Alt+Up')).toBe(true)
+    expect(isValidHotkey('Control+F12')).toBe(true)
+    expect(isValidHotkey('Control+Banana')).toBe(false)
+    expect(isValidHotkey('Control+ArrowUp')).toBe(false)
+  })
+
   it('shows shortcuts the way each system writes them', () => {
     expect(hotkeyLabelFor('Control+Alt+Space', true)).toBe('⌃⌥Space')
     expect(hotkeyLabelFor('Control+Alt+Space', false)).toBe('Ctrl+Alt+Space')

@@ -22,7 +22,6 @@ import {
   tailOf,
   type ComposeView
 } from '@shared/compose'
-
 import type { ComposeAccess } from '@shared/ipc'
 import { getConfig } from '../config'
 import { complete } from '../model'
@@ -33,7 +32,8 @@ import { isEnabled } from '../store/state'
 import { broadcast } from '../windows/common'
 import { hideCompose, mouseAnchor, showCompose, type Anchor } from '../windows/composeWindow'
 import type { FieldInfo } from './helper'
-let hotkeyLabel = platform.composeHotkey.label
+/** The shortcut as people see it, e.g. ⌃⌥Space or Ctrl+Alt+Space. Follows Settings. */
+const hotkeyLabel = (): string => hotkeyLabelFor(profileStore.get().compose.hotkey, process.platform === 'darwin')
 
 const MODEL_TIMEOUT_MS = 25_000
 
@@ -103,7 +103,7 @@ export async function onComposeHotkey(): Promise<void> {
       messages[field.error ?? ''] ?? {
         state: 'error',
         app: name,
-        message: `Click into a text box in ${name} first, then press ${hotkeyLabel}. (Some apps don't share their text.)`
+        message: `Click into a text box in ${name} first, then press ${hotkeyLabel()}. (Some apps don't share their text.)`
       }
     )
   }
@@ -113,7 +113,7 @@ export async function onComposeHotkey(): Promise<void> {
     return show({
       state: 'error',
       app: name,
-      message: `“Complete my text” isn't allowed in ${name} yet. Allowing it lets pai read the text box you're typing in, only when you press ${hotkeyLabel}.`,
+      message: `“Complete my text” isn't allowed in ${name} yet. Allowing it lets pai read the text box you're typing in, only when you press ${hotkeyLabel()}.`,
       action: { kind: 'allow-app', label: `Allow in ${name}` }
     })
   }
@@ -126,7 +126,7 @@ export async function onComposeHotkey(): Promise<void> {
     })
   }
   if (!(field.before ?? '').trim()) {
-    return show({ state: 'error', app: name, message: `Type a few words first, then press ${hotkeyLabel} to finish them.` })
+    return show({ state: 'error', app: name, message: `Type a few words first, then press ${hotkeyLabel()} to finish them.` })
   }
   await generate()
 }
@@ -213,7 +213,7 @@ export async function chooseCompletion(index: unknown): Promise<void> {
     show({
       state: 'error',
       app: name,
-      message: res.error === 'app-changed' ? `${name} wasn't in front any more, so nothing was inserted.` : `Couldn't insert into ${name}. Try clicking in the text box and pressing ${hotkeyLabel} again.`
+      message: res.error === 'app-changed' ? `${name} wasn't in front any more, so nothing was inserted.` : `Couldn't insert into ${name}. Try clicking in the text box and pressing ${hotkeyLabel()} again.`
     })
   }
 }
@@ -228,7 +228,7 @@ export async function composeAction(): Promise<void> {
     const { bundleId, name } = s.field.app
     profileStore.update((p) => ({ ...p, compose: { ...p.compose, apps: [...p.compose.apps.filter((a) => a.id !== bundleId), { id: bundleId, name }] } }))
     broadcast('data:changed', { what: 'profile' })
-    if (!(s.field.before ?? '').trim()) return show({ state: 'error', app: name, message: `Allowed. Type a few words, then press ${hotkeyLabel} to finish them.` })
+    if (!(s.field.before ?? '').trim()) return show({ state: 'error', app: name, message: `Allowed. Type a few words, then press ${hotkeyLabel()} to finish them.` })
     return generate()
   }
   cancelCompose()
@@ -271,13 +271,24 @@ export function syncComposeHotkey(openSettings?: (section: string) => void): str
   }
   if (!want || registeredAccel) return null
   if (!isValidHotkey(settings.hotkey)) return `"${settings.hotkey}" isn't a valid shortcut.`
-  const mac = process.platform === 'darwin'
   if (!globalShortcut.register(settings.hotkey, () => void onComposeHotkey())) {
     console.warn(`[compose] could not register ${settings.hotkey}; another app may be using it`)
-    return `${hotkeyLabelFor(settings.hotkey, mac)} is already used by another app. Pick a different shortcut.`
+    return `${hotkeyLabel()} is already used by another app. Pick a different shortcut.`
   }
   registeredAccel = settings.hotkey
-  hotkeyLabel = hotkeyLabelFor(settings.hotkey, mac)
+  return null
+}
+
+/**
+ * Can this shortcut be used? Checked before Settings are saved, so a clash
+ * rejects the whole save instead of half-applying it. Returns a message, or null.
+ */
+export function checkComposeHotkey(accel: string): string | null {
+  if (accel === registeredAccel) return null
+  const label = isValidHotkey(accel) ? hotkeyLabelFor(accel, process.platform === 'darwin') : accel
+  if (!isValidHotkey(accel)) return `"${label}" isn't a valid shortcut.`
+  if (!globalShortcut.register(accel, () => {})) return `${label} is already used by another app. Pick a different shortcut.`
+  globalShortcut.unregister(accel)
   return null
 }
 

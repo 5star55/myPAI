@@ -28,7 +28,8 @@ import { notify, scheduleNextReminder, snoozeReminder } from './reminders/schedu
 import { ensureChatWindow, getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { broadcast } from './windows/common'
 import { getComposeWindow } from './windows/composeWindow'
-import { chooseCompletion, composeAccess, composeAction, cancelCompose, syncComposeHotkey } from './compose'
+import { platform } from './platform'
+import { chooseCompletion, checkComposeHotkey, composeAccess, composeAction, cancelCompose, syncComposeHotkey } from './compose'
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
 import { clearFinishedTasks, deleteTask, listTasks, replyToTask, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
 import type { FloatSize } from '@shared/ipc'
@@ -135,18 +136,18 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
 
   // Profile
   handle(IPC.profileGet, 'any', () => ok(profileStore.get()))
-   handle(IPC.profileSave, 'chat', (raw) => {
+  handle(IPC.profileSave, 'chat', (raw) => {
     const profile = sanitizeProfile(raw)
     profile.approvedFolders = profile.approvedFolders.filter(isDir)
-    const previous = profileStore.get().compose.hotkey
-    profileStore.set(profile)
-    const problem = syncComposeHotkey()
-    if (problem) {
-      // Another app owns this shortcut: keep the old one and say so.
-      profileStore.set({ ...profile, compose: { ...profile.compose, hotkey: previous } })
-      syncComposeHotkey()
-      return { ok: false, error: problem }
+    // A new Complete my text shortcut must be usable before anything is saved, so a clash changes nothing.
+    const before = profileStore.get().compose
+    const hotkeyChanging = profile.compose.hotkey !== before.hotkey || !before.enabled
+    if (profile.compose.enabled && hotkeyChanging && platform.supports.completeText) {
+      const problem = checkComposeHotkey(profile.compose.hotkey)
+      if (problem) return { ok: false, error: problem }
     }
+    profileStore.set(profile)
+    syncComposeHotkey() // "Complete my text" may have been switched on or off, or its shortcut changed
     resetSuggestIndex() // folders may have changed
     refreshProactive()
     broadcast('data:changed', { what: 'profile' })
