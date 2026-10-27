@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { openApp } from '../src/main/tools/apps'
+import { openSettingsPage, settingsUrl } from '../src/main/tools/settingsPage'
 import { deleteFile, listFiles, moveFile, organizeFolder, renameFile } from '../src/main/tools/files'
 import type { PrepareResult } from '../src/main/tools/types'
 import { TMP, makeFiles, useProfile } from './helpers'
@@ -71,5 +72,27 @@ describe('file tools', () => {
     expect('error' in openApp.prepare({ name: 'Calculator; rm -rf ~' })).toBe(true)
     expect('error' in openApp.prepare({ name: '$(whoami)' })).toBe(true)
     expect('error' in openApp.prepare({ name: 'Calculator' })).toBe(false)
+  })
+})
+
+describe('open_settings_page', () => {
+  it('only opens pages on the fixed list', () => {
+    expect('error' in openSettingsPage.prepare({ page: 'constructor' })).toBe(true)
+    expect('error' in openSettingsPage.prepare({ page: 'toString' })).toBe(true)
+    expect('error' in openSettingsPage.prepare({ page: 'ms-settings:windowsupdate' })).toBe(true)
+  })
+
+  it('accepts any case and remembers approvals per page', () => {
+    const r = openSettingsPage.prepare({ page: 'Notifications' }) as PrepareResult
+    if (process.platform !== 'darwin' && process.platform !== 'win32') return expect('error' in r).toBe(true)
+    expect(ready(r).target).toBe('notifications')
+    expect(ready(r).rememberScope).toBe('settings:notifications')
+  })
+
+  it('has a URL on macOS and Windows only', () => {
+    expect(settingsUrl('sound', 'darwin')).toMatch(/^x-apple\.systempreferences:/)
+    expect(settingsUrl('sound', 'win32')).toBe('ms-settings:sound')
+    expect(settingsUrl('sound', 'linux')).toBeNull()
+    expect(settingsUrl('constructor', 'win32')).toBeNull()
   })
 })
