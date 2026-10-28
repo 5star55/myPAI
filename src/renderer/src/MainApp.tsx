@@ -74,7 +74,7 @@ export function MainApp() {
     }
   }, [])
   usePaiEvent('voice:toggle', () => void handsFree.toggle())
-  usePaiEvent('voice:review', ({ action }) => handsFree.resolveReview(action))
+  usePaiEvent('voice:review', ({ action, text }) => handsFree.resolveReview(action, text))
 
   // Hands-free voice follows the profile (name = wake word) and the off switch.
   const p = profile.data

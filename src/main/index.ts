@@ -10,6 +10,7 @@ import { syncComposeHotkey } from './compose'
 import { stopHelper } from './compose/helper'
 import { askInChat, openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
 import { filesFromArgs, summarizeRequest } from './sendTo'
+import { stopAllServers } from './tools/servers'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -111,6 +112,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   stopHelper()
   destroyTray()
+  stopAllServers() // dev servers pai started never outlive it
 })
 
 // The floating icon keeps the app alive; quit from its right-click menu.

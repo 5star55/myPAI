@@ -26,6 +26,9 @@ const DEFAULT_PERMISSIONS: Record<PermissionKey, boolean> = {
   shell: true // each command still asks unless "run and report" is chosen
 }
 
+/** Built-in skills that start switched on. Each is turned on once; if you switch it off, it stays off. */
+const DEFAULT_ON_SKILLS = ['quiz-master']
+
 export function defaultProfile(): Profile {
   return {
     setupComplete: false,
@@ -34,7 +37,8 @@ export function defaultProfile(): Profile {
     tone: 'friendly',
     approvedFolders: [],
     permissions: { ...DEFAULT_PERMISSIONS },
-    enabledSkills: [],
+    enabledSkills: [...DEFAULT_ON_SKILLS],
+    defaultSkillsApplied: [...DEFAULT_ON_SKILLS],
     proactive: true,
     wakeWord: false,
     voice: { ...DEFAULT_VOICE },
@@ -65,6 +69,8 @@ export function sanitizeProfile(raw: unknown): Profile {
   const perms = isObj(raw.permissions) ? raw.permissions : {}
   const folders = Array.isArray(raw.approvedFolders) ? raw.approvedFolders : []
   const skills = Array.isArray(raw.enabledSkills) ? raw.enabledSkills : []
+  const applied = (Array.isArray(raw.defaultSkillsApplied) ? raw.defaultSkillsApplied : []).filter((s): s is string => typeof s === 'string')
+  const newDefaults = DEFAULT_ON_SKILLS.filter((id) => !applied.includes(id))
   return {
     setupComplete: raw.setupComplete === true,
     assistantName: str(raw.assistantName, d.assistantName).trim().slice(0, 40) || d.assistantName,
@@ -81,7 +87,8 @@ export function sanitizeProfile(raw: unknown): Profile {
     permissions: Object.fromEntries(
       PERMISSION_KEYS.map((k) => [k, typeof perms[k] === 'boolean' ? perms[k] : d.permissions[k]])
     ) as Record<PermissionKey, boolean>,
-    enabledSkills: [...new Set(skills.filter((s): s is string => typeof s === 'string'))],
+    enabledSkills: [...new Set([...skills.filter((s): s is string => typeof s === 'string'), ...newDefaults])],
+    defaultSkillsApplied: [...new Set([...applied, ...DEFAULT_ON_SKILLS])],
     proactive: typeof raw.proactive === 'boolean' ? raw.proactive : d.proactive,
     wakeWord: raw.wakeWord === true,
     voice: sanitizeVoice(raw.voice),

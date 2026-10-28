@@ -28,7 +28,7 @@ describe('reply formatting', () => {
   })
 
   it('shows an unclosed code block (still streaming) as code', () => {
-    expect(parseBlocks('```js\nconst a = 1')).toEqual([{ type: 'code', lang: 'js', text: 'const a = 1' }])
+    expect(parseBlocks('```js\nconst a = 1')).toEqual([{ type: 'code', lang: 'js', text: 'const a = 1', open: true }])
   })
 
   it('parses lists and headings', () => {

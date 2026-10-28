@@ -55,6 +55,22 @@ export function shrinkToolOutputs(messages: ChatMessage[], budget: number): void
 // Which tools to offer
 // ---------------------------------------------------------------------------
 
+/** Offered together for any coding request. */
+export const DEV_TOOLS = [
+  'find_files',
+  'search_code',
+  'read_file',
+  'edit_file',
+  'create_file',
+  'create_folder',
+  'list_files',
+  'run_command',
+  'start_server',
+  'server_output',
+  'stop_server',
+  'open_preview'
+]
+
 const GROUPS: { tools: string[]; words: RegExp }[] = [
   {
     tools: ['list_files', 'read_file', 'create_file', 'create_folder', 'move_file', 'rename_file', 'delete_file', 'organize_folder', 'summarize_document'],
@@ -68,8 +84,14 @@ const GROUPS: { tools: string[]; words: RegExp }[] = [
     words: /\b(search|look ?up|google|web|online|internet|news|latest|current|today'?s|price|cost|weather|score|who won|release|version|update)\b/i
   },
   {
+    // Coding: everything needed to explore, change, run and check a project.
+    tools: [...DEV_TOOLS],
+    words:
+      /\b(code|coding|codebase|repo|project|app|website|site|landing page|web ?app|next\.?js|react|vue|svelte|angular|vite|tailwind|html|css|javascript|typescript|component|page|route|api|endpoint|bug|fix|debug|error|crash|refactor|feature|function|class|tests?|build|compile|scaffold|deploy|dev server|server|localhost|preview|npm|npx|yarn|pnpm)\b|\.(tsx?|jsx?|css|html|py|json)\b/i
+  },
+  {
     tools: ['run_command'],
-    words: /\b(run|execute|command|terminal|shell|script|install|git|npm|pip|python3?|node|brew|disk|space|storage|process(es)?|cpu|memory usage|ram|battery|wi-?fi|network|ip address|system|uptime|ping|port)\b/i
+    words: /\b(run|execute|commands?|terminal|shell|script|install|git|npm|npx|yarn|pnpm|pip|python3?|node|brew|disk|space|storage|process(es)?|cpu|memory usage|ram|battery|wi-?fi|network|ip address|system|uptime|ping|port)\b/i
   }
 ]
 /** Cheap, run without asking, and useful anywhere. */

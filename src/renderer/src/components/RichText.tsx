@@ -1,6 +1,8 @@
 /** Renders an assistant reply with simple formatting. Built from parsed pieces, never raw HTML. */
 import { Fragment, useState } from 'react'
 import { parseBlocks, type Inline } from '@shared/markdown'
+import { parsePartialQuiz, parseQuiz } from '@shared/quiz'
+import { QuizCard } from './QuizCard'
 
 function InlineText({ parts }: { parts: Inline[] }) {
   return (
@@ -64,6 +66,13 @@ export function RichText({ text }: { text: string }) {
               <InlineText parts={b.inline} />
             </h4>
           )
+        }
+        if (b.type === 'divider') return <hr key={i} />
+        if (b.type === 'code' && b.lang === 'quiz') {
+          // Still being written: the questions finished so far can already be answered.
+          const quiz = b.open ? parsePartialQuiz(b.text) : parseQuiz(b.text)
+          if (quiz) return <QuizCard key={i} quiz={quiz} writing={b.open} />
+          if (b.open) return <div key={i} className="quiz quiz-loading">Preparing your quiz…</div>
         }
         if (b.type === 'code') return <CodeBlock key={i} lang={b.lang} text={b.text} />
         if (b.type === 'list') {

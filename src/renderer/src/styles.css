@@ -17,6 +17,8 @@
   --danger: #ff5c7a;
   --glow: 0 0 24px rgba(56, 225, 255, 0.35), 0 0 64px rgba(164, 107, 255, 0.18);
   --radius: 16px;
+  /* The chat's reading column: short lines are easier to read. */
+  --read-width: 760px;
   --font: ui-sans-serif, -apple-system, 'Segoe UI', 'Inter', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, monospace;
   color-scheme: dark;
@@ -58,13 +60,7 @@ body {
     linear-gradient(90deg, rgba(120, 160, 255, 0.06) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(ellipse at 50% 30%, black 20%, transparent 75%);
-  animation: grid-drift 24s linear infinite;
-}
-
-@keyframes grid-drift {
-  to {
-    background-position: 44px 44px;
-  }
+  /* Static on purpose: animating a full-window masked background repaints every frame (a hot laptop). */
 }
 
 .topbar {
@@ -95,7 +91,7 @@ body {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: var(--glow);
-  animation: pulse 2.4s ease-in-out infinite;
+  /* Still: an endlessly pulsing dot keeps the window redrawing. */
 }
 
 .headline {
@@ -243,9 +239,22 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  width: min(820px, 100%);
-  margin: 0 auto;
-  padding: 0 20px 14px;
+  width: 100%;
+  padding: 0 0 14px;
+}
+
+/*
+ * Messages, composer and suggestions share one centered column (like a page of text);
+ * the list itself stays full width so its scrollbar sits at the window edge.
+ */
+.chat-list > :not(.chat-empty),
+.chat > .live-suggestions,
+.chat > .attach-strip,
+.chat > .composer,
+.chat > .composer-hint {
+  width: calc(100% - 2 * clamp(20px, 5vw, 48px));
+  max-width: var(--read-width);
+  margin-inline: auto;
 }
 
 .chat-list {
@@ -254,8 +263,8 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 12px 4px 20px;
+  gap: 30px;
+  padding: 18px 4px 24px;
   scrollbar-width: thin;
   scrollbar-color: var(--glass-border) transparent;
 }
@@ -302,54 +311,33 @@ body {
   justify-content: flex-end;
 }
 
-/* The avatar sits next to the start of the reply, not at the bottom of long results. */
+/* Replies read like a document: plain text on the page, no bubble or avatar. */
 .msg-assistant {
   align-items: flex-start;
-}
-
-.msg-assistant .avatar {
-  margin-top: 6px;
 }
 
 .bubble {
   max-width: 78%;
   padding: 11px 15px;
   border-radius: 16px;
-  font-size: 14.5px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
 }
 
 .msg-assistant .bubble {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  border-bottom-left-radius: 4px;
-  backdrop-filter: blur(14px);
+  padding: 0;
+  font-size: 15.5px;
+  color: var(--text);
 }
 
-/* Gradient border: a gradient background clipped behind a solid fill. */
+/* Your messages: a soft rounded chip on the right. */
 .msg-user .bubble {
-  border: 1px solid transparent;
-  border-bottom-right-radius: 4px;
-  background:
-    linear-gradient(#141a3c, #141a3c) padding-box,
-    linear-gradient(120deg, var(--accent), var(--accent-2)) border-box;
-  box-shadow: 0 0 22px rgba(56, 225, 255, 0.12);
-}
-
-.avatar {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff 0%, var(--accent) 25%, var(--accent-2) 75%);
-  box-shadow: 0 0 14px rgba(56, 225, 255, 0.45);
-}
-
-.avatar-busy {
-  animation: breathe 1.2s ease-in-out infinite;
+  padding: 10px 18px;
+  border-radius: 18px;
+  background: rgba(150, 170, 255, 0.1);
 }
 
 .typing {
@@ -661,8 +649,9 @@ button:focus-visible {
 .msg-assistant .msg-body {
   flex: 1;
   min-width: 0;
-  max-width: calc(100% - 36px);
-  align-items: flex-start;
+  max-width: 100%;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .msg-actions {
@@ -694,9 +683,91 @@ button:focus-visible {
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* Under a reply: icon buttons and when it was written, always visible. */
+.msg-actions-reply {
+  align-items: center;
+  margin-left: -6px;
+  opacity: 1;
+}
+
+.msg-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+}
+
+.msg-time {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+/* Pictures in a message, and waiting to be sent */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.msg-images img {
+  max-width: min(100%, 420px);
+  max-height: 320px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--glass-border);
+}
+
+.attach-strip {
+  display: flex;
+  gap: 8px;
+  padding: 0 4px 8px;
+}
+
+.attach-thumb {
+  position: relative;
+}
+
+.attach-thumb img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--glass-border);
+}
+
+.attach-thumb button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #2a3158;
+  color: var(--text);
+  font: 14px/20px var(--font);
+  cursor: pointer;
+}
+
+.composer-drop {
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+
 /* Your messages: actions sit under the bubble, on the right. */
 .msg-user .msg-actions {
-  margin: 0 4px 0 0;
+  align-items: center;
+  margin: 0 -6px 0 0;
+}
+
+.msg-user .msg-time {
+  margin: 0 6px 0 0;
 }
 
 /* Editing a message you already sent */
@@ -746,33 +817,182 @@ button:focus-visible {
   margin: 8px 0 0 -6px;
 }
 
-/* "⏺ Used 6 steps ▸": a finished run's steps, folded */
+/* "Searched the web, read a file ▸": a finished run's steps, folded */
+.acts-folded {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 .acts-summary {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 10px 4px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--glass-border);
-  background: rgba(8, 11, 28, 0.5);
+  gap: 8px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
   color: var(--text-dim);
-  font: 12px var(--mono);
+  font: 15px var(--font);
+  text-align: left;
   cursor: pointer;
 }
 
 .acts-summary:hover {
   color: var(--text);
-  border-color: rgba(56, 225, 255, 0.35);
 }
 
-.acts-summary .act-dot {
-  color: var(--ok);
-  font-size: 10px;
+.acts-problems {
+  color: var(--warn);
 }
 
 .acts-chevron {
-  font-size: 10px;
+  font-size: 11px;
+}
+
+/* What the assistant said between steps */
+.act-say {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text);
+  animation: rise 0.2s ease;
+}
+
+.act-say + .act {
+  margin-top: 2px;
+}
+
+/* "Open preview  localhost:3000" */
+.preview-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 225, 255, 0.35);
+  background: rgba(56, 225, 255, 0.07);
+  color: var(--accent);
+  font: 600 12.5px var(--font);
+  cursor: pointer;
+}
+
+.acts-folded .preview-link {
+  margin-top: 0;
+}
+
+.preview-link:hover {
+  background: rgba(56, 225, 255, 0.14);
+}
+
+.preview-url {
+  font: 12px var(--mono);
+  color: var(--text-dim);
+}
+
+/* ---------- preview browser toolbar (#preview) ---------- */
+body:has(.preview-bar) {
+  background: #0b0e1d;
+  overflow: hidden;
+}
+
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--glass-border);
+  -webkit-app-region: drag;
+}
+
+.preview-bar button,
+.preview-bar form {
+  -webkit-app-region: no-drag;
+}
+
+.pv-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.pv-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pv-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pv-spin svg {
+  animation: spin 0.9s linear infinite;
+}
+
+.pv-address {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  margin: 0 6px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pv-address:focus-within {
+  outline: 1px solid rgba(56, 225, 255, 0.5);
+}
+
+/* Two classes: stronger than the app-wide text input style further down. */
+.preview-bar .pv-address input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 13px var(--mono);
+}
+
+.pv-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.pv-dot-loading {
+  background: var(--warn);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+
+.pv-errors {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 92, 122, 0.15);
+  color: var(--danger);
+  font: 600 12px var(--font);
+  cursor: pointer;
 }
 
 .act-fold {
@@ -1509,7 +1729,7 @@ button:focus-visible {
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 8px 4px;
+  padding: 8px 16px;
   border-bottom: 1px solid rgba(120, 160, 255, 0.08);
 }
 
@@ -2457,19 +2677,25 @@ body.float-body .grid-bg {
   color: var(--text);
 }
 
-/* review countdown: drains over 2.5 s, then the text is sent */
-.review-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  transform-origin: left;
-  animation: drain 2.5s linear forwards;
+/* review: the heard words, editable, waiting for Send */
+.review-text {
+  flex: 1;
+  min-height: 64px;
+  width: 100%;
+  resize: none;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(8, 11, 28, 0.6);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-@keyframes drain {
-  to {
-    transform: scaleX(0);
-  }
+.review-text:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .voice-review .voice-state {
@@ -3494,9 +3720,7 @@ input[type='range'] {
 }
 
 .task-mini-stop {
-  position: absolute;
-  right: 10px;
-  bottom: 6px;
+  flex: none;
   font-size: 11.5px;
 }
 
@@ -3506,6 +3730,12 @@ input[type='range'] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* the review box grows to fill the card */
+.offer .voice-review {
+  flex: 1;
+  min-height: 0;
 }
 
 .mini-eco .voice-card,
@@ -3671,10 +3901,33 @@ input[type='range'] {
   }
 }
 
+/* The big orb stands still while idle (like the floating one) and moves while pai works. */
+.orb:not(.orb-busy) .orb-core,
+.orb:not(.orb-busy) .orb-ring {
+  animation-play-state: paused;
+}
+
+/* Transform and opacity only: the GPU does these for free; a filter on a glow repaints it every frame. */
 @keyframes breathe {
   50% {
     transform: scale(0.94);
-    filter: brightness(1.15);
+    opacity: 0.85;
+  }
+}
+
+/* Nothing moves while the window is hidden or minimized (see main.tsx), or for "Reduce motion". */
+html.is-hidden *,
+html.is-hidden *::before,
+html.is-hidden *::after {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
@@ -3907,4 +4160,257 @@ body.compose-body {
 
 .task-mini-answer {
   font-size: 12px;
+}
+
+/* ---------- interactive quiz (```quiz blocks in replies) ---------- */
+.rich hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--glass-border);
+}
+
+.quiz {
+  margin: 12px 0;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border);
+  background: rgba(14, 19, 44, 0.7);
+  white-space: normal;
+}
+
+.quiz-loading {
+  color: var(--text-dim);
+  font-size: 14px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.quiz-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.quiz-title {
+  font-weight: 650;
+  font-size: 15px;
+}
+
+.quiz-progress {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.quiz-dots {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.quiz-dots i {
+  flex: 1;
+  max-width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.quiz-dots i.is-current {
+  background: var(--accent);
+}
+
+.quiz-dots i.is-right {
+  background: var(--ok);
+}
+
+.quiz-dots i.is-wrong {
+  background: var(--danger);
+}
+
+.quiz-question {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font: 14.5px/1.45 var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.quiz-option:hover:not(:disabled) {
+  border-color: rgba(56, 225, 255, 0.55);
+  background: rgba(56, 225, 255, 0.06);
+}
+
+.quiz-option:disabled {
+  cursor: default;
+}
+
+.quiz-letter {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  font: 600 12.5px var(--font);
+  color: var(--text-dim);
+}
+
+.quiz-tick {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+.quiz-option.is-right {
+  border-color: rgba(60, 242, 165, 0.6);
+  background: rgba(60, 242, 165, 0.1);
+}
+
+.quiz-option.is-right .quiz-letter,
+.quiz-option.is-right .quiz-tick {
+  color: var(--ok);
+}
+
+.quiz-option.is-wrong {
+  border-color: rgba(255, 92, 122, 0.6);
+  background: rgba(255, 92, 122, 0.1);
+}
+
+.quiz-option.is-wrong .quiz-letter,
+.quiz-option.is-wrong .quiz-tick {
+  color: var(--danger);
+}
+
+.quiz-option.is-dim {
+  opacity: 0.5;
+}
+
+.quiz-feedback {
+  margin-top: 14px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  animation: rise 0.2s ease;
+}
+
+.quiz-feedback.is-right {
+  background: rgba(60, 242, 165, 0.08);
+}
+
+.quiz-feedback.is-right strong {
+  color: var(--ok);
+}
+
+.quiz-feedback.is-wrong {
+  background: rgba(255, 92, 122, 0.08);
+}
+
+.quiz-feedback.is-wrong strong {
+  color: var(--danger);
+}
+
+.quiz-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.quiz-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 16px;
+}
+
+.quiz-score-num {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.quiz-score-num span {
+  font-size: 22px;
+  color: var(--text-dim);
+}
+
+.quiz-score-bar {
+  width: min(280px, 100%);
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.quiz-score-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  transition: width 0.6s ease;
+}
+
+.quiz-verdict {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.quiz-summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.quiz-summary li {
+  display: flex;
+  gap: 10px;
+}
+
+.quiz-mark {
+  flex: none;
+  font-weight: 700;
+}
+
+.quiz-summary .is-right .quiz-mark {
+  color: var(--ok);
+}
+
+.quiz-summary .is-wrong .quiz-mark {
+  color: var(--danger);
+}
+
+.quiz-correct {
+  color: var(--text-dim);
 }

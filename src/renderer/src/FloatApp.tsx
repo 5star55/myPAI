@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent } from 'react'
 import { looksLikeChat } from '@shared/intent'
-import type { AppState, FloatSize, Offer, Suggestion, VoiceStatus } from '@shared/ipc'
+import { MAX_REVIEW_CHARS, type AppState, type FloatSize, type Offer, type ReviewAction, type Suggestion, type VoiceStatus } from '@shared/ipc'
 import { ChatNudge } from './components/ChatNudge'
 import { TaskCard } from './components/TaskCard'
 import { usePaiEvent } from './hooks'
@@ -36,10 +36,13 @@ export function FloatApp() {
   const [nudge, setNudge] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  /** The heard words while reviewing; you can fix them before sending. */
+  const [heard, setHeard] = useState('')
   const tasks = useTasks()
   const drag = useRef<{ x: number; y: number; moved: number } | null>(null)
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
+  const reviewRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     document.body.classList.add('float-body')
@@ -55,13 +58,15 @@ export function FloatApp() {
   usePaiEvent('voice:status', (s) => {
     clearTimeout(hideTimer.current)
     setVoice(s)
+    if (s.state === 'review') setHeard(s.caption ?? '')
     // An idle message (e.g. "mic is off") stays a few seconds, then the card closes.
     if (s.state === 'idle' && s.caption) hideTimer.current = setTimeout(() => setVoice({ state: 'idle' }), 4000)
   })
 
   const voiceCard = voice.state !== 'idle' || !!voice.caption
   const reminder = reminders[0]
-  const size: FloatSize = panel ? 'panel' : reminder || offer || voiceCard ? 'card' : 'orb'
+  const reviewing = voice.state === 'review'
+  const size: FloatSize = panel ? 'panel' : reminder ? 'card' : reviewing ? 'review' : offer || voiceCard ? 'card' : 'orb'
   const closeReminder = (snooze: boolean) => {
     if (!reminder) return
     if (snooze) void window.pai.snoozeReminder(reminder.message)
@@ -70,6 +75,16 @@ export function FloatApp() {
   useEffect(() => {
     void window.pai.setFloatExpanded(size)
   }, [size])
+
+  // Reviewing what you said: take keyboard focus with the cursor at the end, ready to fix a word.
+  useEffect(() => {
+    if (!reviewing) return
+    void window.pai.focusFloat().then(() => {
+      const box = reviewRef.current
+      box?.focus()
+      box?.setSelectionRange(box.value.length, box.value.length)
+    })
+  }, [reviewing])
 
   // Opening the panel: take keyboard focus so you can type right away. Esc closes it.
   useEffect(() => {
@@ -142,6 +157,16 @@ export function FloatApp() {
     setPanel(false)
   }
 
+  const review = (action: ReviewAction) => void window.pai.voiceReview(action, heard)
+
+  /** Enter sends what was heard (Shift+Enter = new line), Esc cancels. */
+  function onReviewKey(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      if (heard.trim()) review('send')
+    } else if (e.key === 'Escape') void window.pai.toggleVoice()
+  }
+
   /** Tab takes the first suggestion. */
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Tab' && !e.shiftKey && suggestions.length && draft.trim()) {
@@ -157,16 +182,27 @@ export function FloatApp() {
   const voiceView = voiceCard && (
     <div className={`voice-card voice-${voice.state}`} role="status" aria-live="polite">
       {voice.state !== 'idle' && <div className="voice-state">{VOICE_LABEL[voice.state]}</div>}
-      {voice.caption && <p className="offer-text">{voice.state === 'review' ? `“${voice.caption}”` : voice.caption}</p>}
+      {voice.caption && voice.state !== 'review' && <p className="offer-text">{voice.caption}</p>}
       {voice.state === 'review' ? (
         <>
-          <div className="review-bar" key={voice.caption} aria-hidden />
+          {/* Nothing is sent until you confirm. */}
+          <textarea
+            ref={reviewRef}
+            className="review-text"
+            value={heard}
+            maxLength={MAX_REVIEW_CHARS}
+            rows={3}
+            aria-label="What pai heard (you can edit it)"
+            onPointerDown={() => void window.pai.focusFloat()}
+            onChange={(e) => setHeard(e.target.value)}
+            onKeyDown={onReviewKey}
+          />
           <div className="offer-actions">
-            <button className="btn-primary btn-inline btn-sm" onClick={() => window.pai.voiceReview('send')}>
-              Send now
+            <button className="btn-primary btn-inline btn-sm" disabled={!heard.trim()} onClick={() => review('send')}>
+              Send
             </button>
-            <button className="btn-ghost btn-sm" onClick={() => window.pai.voiceReview('edit')}>
-              Edit
+            <button className="btn-ghost btn-sm" onClick={() => review('edit')}>
+              Open in chat
             </button>
             <button className="btn-ghost btn-sm" onClick={() => window.pai.toggleVoice()}>
               Cancel

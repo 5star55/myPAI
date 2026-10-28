@@ -23,11 +23,11 @@ export function Setup({ initial, onDone }: { initial: Profile; onDone: (p: Profi
       if (!r.ok) return
       setSkills(r.value)
       // First run: every working skill starts switched on.
-      if (initial.enabledSkills.length === 0) {
+      if (!initial.setupComplete) {
         set({ enabledSkills: r.value.filter((s) => !s.error).map((s) => s.id) })
       }
     })
-  }, [initial.enabledSkills.length])
+  }, [initial.setupComplete])
 
   async function generate() {
     setGenerating(true)

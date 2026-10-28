@@ -2,7 +2,8 @@
  * handsFree.ts — talk to pai without opening the window.
  *
  *   Hotkey (⌘⇧Space) or "Hey <name>"  ->  chime, listen (live words on the orb)
- *   ->  review for 2.5 s ("Send now" / "Edit")  ->  send as a chat message
+ *   ->  review: the heard text waits on the orb, editable, until you press
+ *       Send / Edit (open in chat) / Cancel  ->  send as a chat message
  *   ->  speak the reply  ->  listen for a follow-up
  *
  * The conversation ends after a few quiet seconds, on "thanks"/"bye", or when
@@ -20,10 +21,9 @@ import { VoiceListener } from './listener'
 const FIRST_TURN_WAIT_MS = 8000
 const FOLLOW_UP_WAIT_MS = 6000
 const LIVE_CAPTION_MS = 1500
-/** How long the heard text is shown before it is sent (time to spot a mistake). */
-export const REVIEW_MS = 2500
 
 type Sender = (text: string) => Promise<string | null>
+type Review = { action: ReviewAction; text?: string } | 'cancel'
 
 class HandsFree {
   private listener = new VoiceListener()
@@ -35,7 +35,7 @@ class HandsFree {
   private inConversation = false
   private cancelled = false
   private listeners = new Set<(s: VoiceStatus) => void>()
-  private reviewResolve: ((a: ReviewAction | 'cancel') => void) | null = null
+  private reviewResolve: ((r: Review) => void) | null = null
   private editor: ((text: string) => void) | null = null
 
   /** The chat screen provides this: put text in the message box for editing. */
@@ -43,9 +43,9 @@ class HandsFree {
     this.editor = fn
   }
 
-  /** Orb buttons during review. */
-  resolveReview(action: ReviewAction): void {
-    this.reviewResolve?.(action)
+  /** Orb buttons during review; `text` is the heard text after any edits. */
+  resolveReview(action: ReviewAction, text?: string): void {
+    this.reviewResolve?.({ action, text })
   }
 
   /** Is a spoken conversation happening right now? */
@@ -164,17 +164,14 @@ class HandsFree {
     }
   }
 
-  /** Show the heard text with Send now / Edit; send automatically after REVIEW_MS. */
-  private review(text: string): Promise<ReviewAction | 'cancel'> {
+  /** Show the heard text on the orb and wait: nothing is sent until you confirm. */
+  private review(text: string): Promise<Review> {
     this.set({ state: 'review', caption: text })
     return new Promise((resolve) => {
-      const finish = (a: ReviewAction | 'cancel') => {
-        clearTimeout(timer)
+      this.reviewResolve = (r) => {
         this.reviewResolve = null
-        resolve(a)
+        resolve(r)
       }
-      const timer = setTimeout(() => finish('send'), REVIEW_MS)
-      this.reviewResolve = finish
     })
   }
 
@@ -230,7 +227,8 @@ class HandsFree {
           // Show what was heard, so a misheard word can be caught before sending.
           const choice = await this.review(text)
           if (choice === 'cancel' || this.cancelled) break
-          if (choice === 'edit') {
+          text = choice.text?.trim() || text
+          if (choice.action === 'edit') {
             this.editor?.(text)
             this.cancelled = true // quietly end; the text is waiting in the chat box
             break
