@@ -19,6 +19,8 @@ export const saveMemory: Tool = {
     return {
       action: 'Save a memory',
       target: fact,
+      // Stays on this computer and can be edited or deleted on the Memory page, so no dialog.
+      autoApprove: true,
       run: async () => {
         addMemory(fact)
         broadcast('data:changed', { what: 'memory' })

@@ -49,8 +49,10 @@ export interface CompleteRequest {
   tools?: ToolSpec[]
   /** Aborts the request (used by the off switch and the Stop button). */
   signal?: AbortSignal
-  /** If given, the reply is streamed and each new piece of text is passed here. */
+  /** Each new piece of the reply as it streams in. */
   onText?: (delta: string) => void
+  /** Reply length limit (default: SMALL_/BIG_MAX_TOKENS). */
+  maxTokens?: number
   /** Default: low for tool calling (precise), higher for chat (natural). */
   temperature?: number
   /** A text reply cut off by the token limit is continued (up to this many times). */
@@ -63,6 +65,14 @@ const CONTINUE_NOTE = 'Continue exactly where you stopped, mid-sentence if neede
 
 // Long enough for a whole source file in one reply.
 const REQUEST_TIMEOUT_MS = 180_000
+/** No data for this long means the server stalled: that attempt is dropped and tried again. */
+const STALL_MS = 45_000
+/** Extra attempts after a stall, a dropped connection or a server error (only before any text was shown). */
+const RETRIES = 2
+
+class StalledError extends Error {}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 let client: OpenAI | null = null
 function getClient(): OpenAI {
@@ -81,7 +91,7 @@ function getClient(): OpenAI {
 export async function complete(req: CompleteRequest): Promise<Result<ModelReply>> {
   const c = getConfig()
   const model = req.model || (req.size === 'big' ? c.bigModel : c.smallModel)
-  const maxTokens = req.size === 'big' ? c.bigMaxTokens : c.smallMaxTokens
+  const maxTokens = req.maxTokens ?? (req.size === 'big' ? c.bigMaxTokens : c.smallMaxTokens)
 
   if (c.mode === 'mock') {
     await new Promise((r) => setTimeout(r, 350)) // feel a little like a real model
@@ -114,14 +124,20 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
         ...(isOllama(c.baseURL) ? {} : { chat_template_kwargs: { enable_thinking: false } })
       }
       let res: OpenAI.Chat.ChatCompletion
-      if (req.onText) {
-        // Streaming: text arrives piece by piece; tool calls are assembled by the SDK.
-        const onText = req.onText
-        const stream = getClient().chat.completions.stream(body, { signal: req.signal })
-        stream.on('content', (delta) => onText(delta))
-        res = await stream.finalChatCompletion()
-      } else {
-        res = await getClient().chat.completions.create(body, { signal: req.signal })
+      for (let attempt = 0; ; attempt++) {
+        let shown = false
+        try {
+          res = await streamOnce(body, req.signal, (delta) => {
+            shown = true
+            req.onText?.(delta)
+          })
+          break
+        } catch (err) {
+          // Retry hiccups by itself, but never once the user has seen part of this reply.
+          if (!isTransient(err) || shown || attempt >= RETRIES || req.signal?.aborted) throw err
+          console.warn(`[model] ${err instanceof StalledError ? 'stalled' : 'request failed'}; trying again (${attempt + 1}/${RETRIES})`)
+          await sleep(1000 * (attempt + 1))
+        }
       }
       const choice = res.choices[0]
       const msg = choice?.message
@@ -145,6 +161,47 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
 }
 
 /**
+ * One streamed request. Text and tool calls arrive piece by piece (the SDK assembles
+ * tool calls), and if the server goes quiet for STALL_MS the attempt is given up.
+ */
+async function streamOnce(
+  body: Parameters<OpenAI["chat"]["completions"]["stream"]>[0],
+  signal: AbortSignal | undefined,
+  onText: (delta: string) => void
+): Promise<OpenAI.Chat.ChatCompletion> {
+  const attempt = new AbortController()
+  const stop = () => attempt.abort()
+  signal?.addEventListener('abort', stop, { once: true })
+  let stalled = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const watch = () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      stalled = true
+      attempt.abort()
+    }, STALL_MS)
+  }
+  watch()
+  try {
+    const stream = getClient().chat.completions.stream(body, { signal: attempt.signal })
+    stream.on('chunk', watch)
+    stream.on('content', (delta) => onText(delta))
+    return await stream.finalChatCompletion()
+  } catch (err) {
+    throw stalled ? new StalledError('stalled') : err
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', stop)
+  }
+}
+
+/** Worth trying again: a stall, a dropped or timed-out connection, or a server-side error. */
+function isTransient(err: unknown): boolean {
+  if (err instanceof StalledError || err instanceof APIConnectionError) return true
+  return err instanceof APIError && !(err instanceof APIUserAbortError) && (err.status ?? 0) >= 500
+}
+
+/**
  * Turn library errors into one plain sentence for the user. The technical detail
  * (server URL, .env hints) always goes to the log, and is shown only in mock mode.
  */
@@ -158,6 +215,8 @@ function describeError(err: unknown, model: string): string {
 
 function explainError(err: unknown, model: string, baseURL: string): [friendly: string, detail: string] {
   const local = isOllama(baseURL)
+  if (err instanceof StalledError)
+    return ['The AI service stopped responding. Please try again in a moment.', `${baseURL} stalled (no data for ${STALL_MS / 1000}s)`]
   // Order matters: the timeout class is a subclass of the connection class.
   if (err instanceof APIConnectionTimeoutError)
     return ['That took too long to answer. Please try again.', `${baseURL} timed out`]

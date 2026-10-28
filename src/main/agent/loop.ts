@@ -35,6 +35,7 @@ import { ToolInputError, type PreparedCall } from '../tools/types'
 import { broadcast } from '../windows/common'
 import { isCapabilityRefusal, isNoToolRefusal, isSmallTalk, needsTools } from './router'
 import { extractTextToolCalls, findStrayToolCalls } from './textToolCalls'
+import { applyMemory, mightHoldFact, proposeMemory } from './autoMemory'
 
 /** Tool rounds per reply: plenty for chores, more for coding (explore, edit, build, check, fix). */
 const MAX_ROUNDS = 12
@@ -232,7 +233,26 @@ export async function runChat(input: unknown): Promise<Result<ChatReply>> {
   const controller = new AbortController()
   chatRun = controller
   try {
-    return await runAgent(history.value, controller.signal, { emit: (e) => broadcast('agent:event', e) })
+    // Lasting facts in the message ("I'm 19") are saved alongside the reply, without being asked.
+    const last = history.value[history.value.length - 1].content
+    const remembering = profileStore.get().permissions.memory && mightHoldFact(last) ? proposeMemory(history.value, controller.signal) : null
+    const res = await runAgent(history.value, controller.signal, { emit: (e) => broadcast('agent:event', e) })
+    if (!res.ok || !remembering) return res
+    // If the assistant saved it itself (save_memory), only drop what's out of date: adding would repeat it.
+    const proposal = await remembering
+    const savedItself = res.value.steps.some((s) => s.tool === 'save_memory')
+    const changes = applyMemory(savedItself ? { add: [], removeIds: proposal.removeIds } : proposal)
+    if (!changes.added.length && !changes.removed.length) return res
+    const summary = [
+      changes.added.length ? `Saved to memory: ${changes.added.join(' ')}` : '',
+      changes.removed.length ? `Forgot (out of date): ${changes.removed.join(' ')}` : ''
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    logActivity('save_memory', changes.added.join(' ') || changes.removed.join(' '), 'ok', `${summary} (automatic)`)
+    broadcast('data:changed', { what: 'memory' })
+    const step: ToolStep = { tool: 'save_memory', target: changes.added.join(' ') || 'memory', status: 'ok', summary, output: summary, auto: true }
+    return { ok: true, value: { ...res.value, steps: [...res.value.steps, step] } }
   } finally {
     chatRun = null
   }
@@ -279,6 +299,7 @@ async function lookAtPictures(history: ChatTurn[], signal: AbortSignal, hooks: R
         const res = await complete({
           size: 'big',
           model: config.visionModel || undefined,
+          maxTokens: 1500, // a description, not an essay: keeps it quick
           messages: [{ role: 'user', content: [{ type: 'text', text: lookPrompt(turn.content) }, { type: 'image_url', image_url: { url: img } }] }],
           signal
         })
@@ -323,7 +344,10 @@ export async function runAgent(input: ChatTurn[], signal: AbortSignal, hooks: Ru
 
   // Coding work (the code tools are on offer) gets the developer instructions and more rounds.
   const isDev = () => useTools && offered.some((t) => t.function.name === 'edit_file')
-  const prompt = () => buildSystemPrompt(profile, useTools, hooks.forceTools === true, isDev())
+  // Skills with triggers (e.g. the quiz) follow the latest message, or the reply it answers ("make it harder").
+  const previous = history.at(-2)
+  const skillText = previous?.role === 'assistant' && previous.content.includes('```quiz') ? `${lastText}\nquiz` : lastText
+  const prompt = () => buildSystemPrompt(profile, useTools, hooks.forceTools === true, isDev(), skillText)
 
   // Fit the conversation into the context window (oldest turns go first; never the system prompt).
   const system = prompt()
@@ -379,7 +403,7 @@ export async function runAgent(input: ChatTurn[], signal: AbortSignal, hooks: Ru
     // "I don't have a function for that": ask again as plain chat (no tools), once, before anything ran.
     if (toolCalls.length === 0 && useTools && steps.length === firstStep && isNoToolRefusal(text)) {
       useTools = false
-      messages[0] = { role: 'system', content: buildSystemPrompt(profile, false) }
+      messages[0] = { role: 'system', content: buildSystemPrompt(profile, false, false, false, skillText) }
       hooks.emit({ kind: 'text-reset' })
       continue
     }
