@@ -2302,6 +2302,7 @@ td .badge {
 
 /* inputs */
 input[type='text'],
+input[type='password'],
 input:not([type]) {
   flex: 1;
   min-width: 0;
@@ -2317,6 +2318,7 @@ input:not([type]) {
     box-shadow 0.2s ease;
 }
 
+input[type='password']:focus,
 input:not([type]):focus {
   border-color: rgba(56, 225, 255, 0.55);
   box-shadow: 0 0 0 3px rgba(56, 225, 255, 0.1);
@@ -4413,4 +4415,63 @@ body.compose-body {
 
 .quiz-correct {
   color: var(--text-dim);
+}
+
+/* ---------- API key (Settings → AI model, setup) ---------- */
+.api-key {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.api-key-status {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.api-key-status.is-missing {
+  color: var(--warn);
+}
+
+.api-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.api-key-row input {
+  flex: 1 1 260px;
+  font: 14px var(--mono);
+}
+
+.api-key .ok-text,
+.api-key .error-text {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+.setup-key {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.setup-key h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.key-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }

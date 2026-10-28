@@ -44,6 +44,19 @@ export function MainApp() {
     window.pai.getConfig().then((r) => r.ok && setConfig(r.value))
     window.pai.getState().then((r) => r.ok && setState(r.value))
   }, [])
+  // A key saved or removed (here or in setup) changes what the app can do.
+  usePaiEvent('data:changed', ({ what }) => {
+    if (what === 'config') window.pai.getConfig().then((r) => r.ok && setConfig(r.value))
+  })
+  function openKeySettings() {
+    try {
+      localStorage.setItem('pai.settingsSection', 'model')
+    } catch {
+      /* Settings opens on its default section */
+    }
+    setSettingsKey((k) => k + 1)
+    setTab('settings')
+  }
   usePaiEvent('state:changed', setState)
   usePaiEvent('ui:navigate', ({ tab: t, section }) => {
     if (section) {
@@ -114,6 +127,14 @@ export function MainApp() {
         </span>
       </header>
 
+      {config?.needsApiKey && (
+        <p className="warning banner key-banner" role="status">
+          <span>Add your Nebius API key to start using {name}. Until then, nothing can be answered.</span>
+          <button className="btn-primary btn-inline btn-sm" onClick={openKeySettings}>
+            Add key
+          </button>
+        </p>
+      )}
       {config?.warnings.map((w) => (
         <p key={w} className="warning banner">
           ⚠ {w}
@@ -148,7 +169,7 @@ export function MainApp() {
           {tab === 'reminders' && <RemindersView />}
           {tab === 'skills' && <SkillsView profile={profile.data} onSaved={(p) => profile.setData(p)} />}
           {tab === 'settings' && (
-            <SettingsView key={settingsKey} profile={profile.data} state={state} config={config} onSaved={(p) => profile.setData(p)} />
+            <SettingsView key={settingsKey} profile={profile.data} state={state} config={config} onSaved={(p) => profile.setData(p)} onConfig={setConfig} />
           )}
         </div>
       </div>

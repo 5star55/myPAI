@@ -86,6 +86,8 @@ const api: PaiApi = {
   dragFloat: (dx, dy) => call(IPC.floatDrag, dx, dy),
   showFloatMenu: () => call(IPC.floatMenu),
 
+  saveApiKey: (key) => call(IPC.apiKeySave, key),
+  removeApiKey: () => call(IPC.apiKeyRemove),
   openPreview: (url) => call(IPC.previewOpen, url),
   previewNav: (action, url) => call(IPC.previewNav, action, url),
 

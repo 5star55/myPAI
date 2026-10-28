@@ -43,8 +43,9 @@ export interface HelperReply {
   method?: 'ax' | 'keys'
 }
 
+/** In the installed app the helper is unpacked next to the app archive (programs can't run from inside it). */
 export const helperPath = (): string =>
-  join(app.getAppPath(), process.platform === 'win32' ? 'native/bin/pai-winhelper.exe' : 'native/bin/pai-axhelper')
+  join(app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked'), process.platform === 'win32' ? 'native/bin/pai-winhelper.exe' : 'native/bin/pai-axhelper')
 
 export const helperAvailable = (): boolean =>
   (process.platform === 'darwin' || process.platform === 'win32') && existsSync(helperPath())

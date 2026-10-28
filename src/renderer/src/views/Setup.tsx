@@ -3,7 +3,8 @@
  * used to build the system prompt, the tool list and the allowlist.
  */
 import { useEffect, useState } from 'react'
-import type { Profile, SkillInfo } from '@shared/ipc'
+import type { Profile, PublicConfig, SkillInfo } from '@shared/ipc'
+import { ApiKeyField } from '../components/ApiKeyField'
 import { Orb } from '../components/Orb'
 import { PermissionChecklist } from '../components/PermissionChecklist'
 import { FoldersField, IdentityFields, PermissionsField, ProactiveField, SkillsField } from '../components/ProfileFields'
@@ -16,7 +17,12 @@ export function Setup({ initial, onDone }: { initial: Profile; onDone: (p: Profi
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [config, setConfig] = useState<PublicConfig | null>(null)
   const set = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }))
+
+  useEffect(() => {
+    window.pai.getConfig().then((r) => r.ok && setConfig(r.value))
+  }, [])
 
   useEffect(() => {
     window.pai.listSkills().then((r) => {
@@ -74,7 +80,18 @@ export function Setup({ initial, onDone }: { initial: Profile; onDone: (p: Profi
       </ol>
 
       <section className="glass panel setup-panel">
-        {step === 0 && <IdentityFields profile={profile} set={set} />}
+        {step === 0 && (
+          <>
+            {/* The installed app needs the user's own Nebius key before it can answer. */}
+            {config && (config.needsApiKey || config.apiKeySource === 'settings') && (
+              <div className="setup-key">
+                <h3>Your Nebius API key</h3>
+                <ApiKeyField config={config} onChange={setConfig} />
+              </div>
+            )}
+            <IdentityFields profile={profile} set={set} />
+          </>
+        )}
         {step === 1 && <FoldersField profile={profile} set={set} />}
         {step === 2 && (
           <>

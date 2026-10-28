@@ -1,0 +1,25 @@
+# Installer settings (npm run dist). Only the files listed under `files` are shipped:
+# never .env or any other secret. Users paste their own Nebius key in Settings → AI model.
+appId: com.pai.assistant
+productName: pai
+directories:
+  output: dist
+files:
+  - out/**
+  - skills/**
+  - resources/**
+  - native/bin/**
+  - package.json
+  # Belt and braces: no .env files, from anywhere (dependencies included), ever.
+  - "!**/.env"
+  - "!**/.env.*"
+# A program inside the app archive can't be started, so the text helper is unpacked next to it.
+asarUnpack:
+  - native/bin/**
+mac:
+  category: public.app-category.productivity
+  target: dmg
+  extendInfo:
+    NSMicrophoneUsageDescription: pai listens when you use the mic or hands-free voice. Speech is turned into text on this computer.
+win:
+  target: nsis
