@@ -50,3 +50,16 @@ describe('quiz blocks', () => {
     expect(parseBlocks('a\n\n---\n\nb').map((b) => b.type)).toEqual(['paragraph', 'divider', 'paragraph'])
   })
 })
+
+describe('quiz skill triggers', () => {
+  it('is only in the prompt when the message asks for a quiz', async () => {
+    const { loadSkills } = await import('../src/main/skills/loader')
+    const { buildSystemPrompt } = await import('../src/main/prompt')
+    const { defaultProfile } = await import('../src/main/store/profile')
+    loadSkills()
+    const profile = { ...defaultProfile(), enabledSkills: ['quiz-master'] }
+    expect(buildSystemPrompt(profile, false, false, false, 'who is the GOAT in football')).not.toContain('Quiz Master')
+    expect(buildSystemPrompt(profile, false, false, false, 'quiz me on AZ-900')).toContain('Quiz Master')
+    expect(buildSystemPrompt(profile, false, false, false, 'give me some practice exam questions')).toContain('Quiz Master')
+  })
+})

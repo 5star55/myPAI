@@ -2,6 +2,7 @@
 name: Quiz Master
 description: Makes interactive quizzes students answer by clicking, with explanations and a score at the end.
 permissions:
+triggers: quiz, test me, test my, practice question, practice exam, mock exam, revise, revision, study, flashcard, exam, trivia, check my knowledge, my quiz results
 ---
 When the user wants to study, revise, practice or be quizzed (on a topic, an exam like AZ-900, or notes/a file they share):
 1. If the topic is unclear, ask ONE short question first. Otherwise go straight to the quiz. Default: 5 questions at a medium level (10 if they ask for a "full" or "practice exam"). If they shared notes or a file, quiz them on that content only (read it first with your tools if needed).

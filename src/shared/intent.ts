@@ -6,7 +6,7 @@
  * Easy to extend: add words to the patterns.
  */
 const ACTION_WORDS =
-  /\b(run|execute|command|terminal|shell|script|install|git|npm|npx|yarn|pnpm|pip|python|node|brew|build|scaffold|fix|debug|refactor|deploy|preview|localhost|dev server|website|web app|landing page|codebase|repo|component|create|make|write|save|new file|mkdir|folder|folders?|downloads|desktop|documents|directory|rename|move|organi[sz]e|tidy|clean up|delete|trash|summari[sz]e|read|open|launch|remind|reminders?|alarm|schedule|timer|search|look up|google|web|news|latest|remember|forget|recall|what do you know|plan my day)\b/i
+  /\b(run|execute|command|terminal|shell|script|install|git|npm|npx|yarn|pnpm|pip|python|node|brew|build|scaffold|fix|debug|refactor|deploy|preview|localhost|dev server|website|web app|landing page|codebase|repo|component|create|make|write|save|new file|mkdir|folder|folders?|downloads|desktop|documents|directory|rename|move|organi[sz]e|tidy|clean up|delete|trash|summari[sz]e|read|open|launch|remind|reminders?|alarm|schedule|timer|search|look up|google|web|news|latest|remember|forget|recall|memory|memori[sz]e|store this|keep in mind|what do you know|plan my day)\b/i
 const LOOKS_LIKE_PATH = /(^|\s)(~\/|\/[\w.-]+\/|[a-z]:\\)/i
 
 /** Learning or writing something to read in the chat ("teach me python", "write a python code to…"). */

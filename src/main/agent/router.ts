@@ -14,5 +14,5 @@ export function isNoToolRefusal(text: string): boolean {
 
 /** A model claiming it can't act on the computer ("I cannot execute commands—only suggest them"). It can. */
 export function isCapabilityRefusal(text: string): boolean {
-  return /\bi(?: can ?not| can[’']?t|[’']?m not able to| am not able to|[’']?m unable to| am unable to| (?:do not|don[’']?t) have (?:the ability|access) to)\s+(?:directly |actually |personally )?(?:run|execute|access|create|write|edit|modify|install|start|launch|set up|scaffold|interact)\b|\bonly (?:suggest|provide|give you) (?:them|the commands?)\b/i.test(text)
+  return /\bi(?: can ?not| can[’']?t|[’']?m not able to| am not able to|[’']?m unable to| am unable to| (?:do not|don[’']?t) have (?:the ability|access) to)\s+(?:directly |actually |personally )?(?:run|execute|access|create|write|edit|modify|install|start|launch|set up|scaffold|interact|retain|remember|store|save|memori[sz]e|keep track)\b|\bonly (?:suggest|provide|give you) (?:them|the commands?)\b/i.test(text)
 }
