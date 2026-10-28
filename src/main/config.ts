@@ -17,6 +17,8 @@ export interface AppConfig {
   apiKey: string
   smallModel: string
   bigModel: string
+  /** Looks at pictures attached to messages ('' = none set: the big model is tried). */
+  visionModel: string
   smallMaxTokens: number
   bigMaxTokens: number
   /** How many tokens the model can read at once (prompt + reply). Used to fit history, and for Ollama's num_ctx. */
@@ -34,6 +36,8 @@ const DEFAULTS = {
   bigMaxTokens: 1536,
   contextTokens: 8192
 }
+/** Hosted models read and write far more: room for whole source files and long coding sessions. */
+const HOSTED_DEFAULTS = { smallMaxTokens: 4096, bigMaxTokens: 8192, contextTokens: 65536 }
 
 function readPositiveInt(raw: string | undefined, fallback: number, name: string, warnings: string[]): number {
   if (!raw) return fallback
@@ -71,9 +75,10 @@ function loadConfig(): AppConfig {
     apiKey,
     smallModel: env.SMALL_MODEL?.trim() || DEFAULTS.model,
     bigModel: env.BIG_MODEL?.trim() || env.SMALL_MODEL?.trim() || DEFAULTS.model,
-    smallMaxTokens: readPositiveInt(env.SMALL_MAX_TOKENS, DEFAULTS.smallMaxTokens, 'SMALL_MAX_TOKENS', warnings),
-    bigMaxTokens: readPositiveInt(env.BIG_MAX_TOKENS, DEFAULTS.bigMaxTokens, 'BIG_MAX_TOKENS', warnings),
-    contextTokens: readPositiveInt(env.MODEL_CONTEXT_TOKENS, DEFAULTS.contextTokens, 'MODEL_CONTEXT_TOKENS', warnings),
+    smallMaxTokens: readPositiveInt(env.SMALL_MAX_TOKENS, isLocal ? DEFAULTS.smallMaxTokens : HOSTED_DEFAULTS.smallMaxTokens, 'SMALL_MAX_TOKENS', warnings),
+    visionModel: env.VISION_MODEL?.trim() ?? '',
+    bigMaxTokens: readPositiveInt(env.BIG_MAX_TOKENS, isLocal ? DEFAULTS.bigMaxTokens : HOSTED_DEFAULTS.bigMaxTokens, 'BIG_MAX_TOKENS', warnings),
+    contextTokens: readPositiveInt(env.MODEL_CONTEXT_TOKENS, isLocal ? DEFAULTS.contextTokens : HOSTED_DEFAULTS.contextTokens, 'MODEL_CONTEXT_TOKENS', warnings),
     tavilyApiKey: env.TAVILY_API_KEY?.trim() ?? '',
     warnings
   }

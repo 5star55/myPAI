@@ -24,6 +24,12 @@ function createChatWindow(): BrowserWindow {
     webPreferences: { ...secureWebPreferences(), backgroundThrottling: false }
   })
   win.once('ready-to-show', () => win.show())
+  // Throttling is off (voice keeps running hidden), so tell the page itself to stop animating.
+  const visibility = (hidden: boolean) => () => win.webContents.send('window:visibility', { hidden })
+  win.on('hide', visibility(true))
+  win.on('minimize', visibility(true))
+  win.on('show', visibility(false))
+  win.on('restore', visibility(false))
   win.on('close', (event) => {
     if (!lifecycle.quitting) {
       event.preventDefault()

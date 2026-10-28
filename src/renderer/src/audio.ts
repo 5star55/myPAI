@@ -148,6 +148,7 @@ function pickVoice(name?: string): SpeechSynthesisVoice | undefined {
 function forSpeech(text: string): string {
   return text
     .replace(/^\(mock\)\s*/i, '')
+    .replace(/```quiz[\s\S]*?(```|$)/g, ' Here is your quiz. ') // the quiz is clicked, not read out
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [title](url) -> title
     .replace(/https?:\/\/\S+/g, 'a link')
     .replace(/[*_#`>|]+/g, ' ')

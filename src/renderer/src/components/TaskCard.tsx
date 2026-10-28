@@ -80,6 +80,11 @@ export function TaskCard({ task, compact = false, defaultOpen }: { task: Task; c
         </span>
         <span className={`task-badge badge-${asksYou ? 'needs-you' : task.status}`}>{task.status === 'running' ? `${doing}…` : asksYou ? 'Asked you' : STATUS_LABEL[task.status]}</span>
         <span className="task-time">{time}</span>
+        {compact && active && (
+          <button className="link-btn danger task-mini-stop" onClick={() => window.pai.stopTask(task.id)}>
+            Stop
+          </button>
+        )}
       </header>
 
       {!open && !compact && !active && (task.result || task.error) && (
@@ -190,11 +195,6 @@ export function TaskCard({ task, compact = false, defaultOpen }: { task: Task; c
             </>
           )}
         </footer>
-      )}
-      {compact && active && (
-        <button className="link-btn danger task-mini-stop" onClick={() => window.pai.stopTask(task.id)}>
-          Stop
-        </button>
       )}
     </article>
   )

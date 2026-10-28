@@ -175,7 +175,7 @@ async function generate(): Promise<void> {
     return show({
       state: 'error',
       app: name,
-      message: stopped ? 'The model took too long.' : res.error,
+      message: stopped ? 'That took too long. Please try again.' : res.error,
       action: { kind: 'retry', label: 'Try again' }
     })
   }

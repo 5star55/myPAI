@@ -12,6 +12,7 @@ import { loadRenderer, secureWebPreferences } from './common'
 const SIZES: Record<FloatSize, { width: number; height: number }> = {
   orb: { width: 84, height: 84 },
   card: { width: 360, height: 200 }, // an offer or the voice caption
+  review: { width: 420, height: 280 }, // what you said, in a box you can edit before it is sent
   panel: { width: 400, height: 470 } // the mini Ecospace
 }
 const COMPACT = SIZES.orb

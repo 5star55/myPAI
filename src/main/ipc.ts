@@ -8,7 +8,7 @@
  */
 import { existsSync, statSync } from 'node:fs'
 import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron'
-import { IPC, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
+import { IPC, MAX_REVIEW_CHARS, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
 import { cancelRun, runChat } from './agent/loop'
 import { getPublicConfig } from './config'
 import { refreshProactive, respondOffer } from './proactive/engine'
@@ -33,9 +33,11 @@ import { platform } from './platform'
 import { chooseCompletion, checkComposeHotkey, composeAccess, composeAction, cancelCompose, syncComposeHotkey } from './compose'
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
 import { clearFinishedTasks, deleteTask, listTasks, replyToTask, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
-import type { FloatSize } from '@shared/ipc'
+import { getPreviewWindow, openPreview, previewNav } from './windows/previewWindow'
+import { stopAllServers } from './tools/servers'
+import type { FloatSize, PreviewAction } from '@shared/ipc'
 
-type From = 'chat' | 'float' | 'compose' | 'any'
+type From = 'chat' | 'float' | 'compose' | 'preview' | 'any'
 
 function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -44,6 +46,7 @@ function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
   if (from === 'chat') return !!win && win === chat
   if (from === 'float') return !!win && win === float
   if (from === 'compose') return !!win && win === getComposeWindow()
+  if (from === 'preview') return !!win && win === getPreviewWindow()
   return !!win && (win === chat || win === float)
 }
 
@@ -71,6 +74,7 @@ export function setEnabled(enabled: boolean): AppState {
     stopAllTasks() // and every Ecospace task
     cancelCompose() // and the "Complete my text" popup
     denyAllPending() // close open permission dialogs as "deny"
+    stopAllServers() // and the dev servers it started
   } else resumeTasks()
   refreshProactive()
   refreshTray()
@@ -251,18 +255,21 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     const s = raw as VoiceStatus
     const states: VoiceStatus['state'][] = ['idle', 'listening', 'thinking', 'speaking', 'review']
     if (!states.includes(s?.state)) return { ok: false, error: 'Bad status.' }
-    const status: VoiceStatus = { state: s.state, caption: typeof s.caption === 'string' ? s.caption.slice(0, 200) : undefined }
+    // The review caption is the whole message (it can be edited and sent), so it is not cut short.
+    const max = s.state === 'review' ? MAX_REVIEW_CHARS : 200
+    const status: VoiceStatus = { state: s.state, caption: typeof s.caption === 'string' ? s.caption.slice(0, max) : undefined }
     getFloatWindow()?.webContents.send('voice:status', status)
     return ok(undefined)
   })
   handle(IPC.voiceToggle, 'any', () => ok(toggleVoice()))
-  handle(IPC.voiceReview, 'float', (action) => {
+  handle(IPC.voiceReview, 'float', (action, text) => {
     if (action !== 'send' && action !== 'edit') return { ok: false, error: 'Bad action.' }
+    if (text !== undefined && typeof text !== 'string') return { ok: false, error: 'Bad text.' }
     const win = action === 'edit' ? showChat() : ensureChatWindow() // Edit opens the chat with the text
-    win.webContents.send('voice:review', { action })
+    win.webContents.send('voice:review', { action, text: text?.slice(0, MAX_REVIEW_CHARS) })
     return ok(undefined)
   })
-  handle(IPC.floatExpand, 'float', (size) => ok(setFloatExpanded((['orb', 'card', 'panel'] as FloatSize[]).includes(size as FloatSize) ? (size as FloatSize) : 'orb')))
+  handle(IPC.floatExpand, 'float', (size) => ok(setFloatExpanded((['orb', 'card', 'review', 'panel'] as FloatSize[]).includes(size as FloatSize) ? (size as FloatSize) : 'orb')))
   handle(IPC.floatFocus, 'float', () => ok(focusFloat()))
 
   // Ecospace tasks (from the main window or the orb)
@@ -300,6 +307,18 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.toggleChat, 'any', () => ok(toggleChat()))
   handle(IPC.floatDrag, 'float', (dx, dy) => ok(dragFloat(Number(dx), Number(dy))))
   handle(IPC.floatMenu, 'float', () => ok(showFloatMenu(menu)))
+
+  // Preview browser: the chat opens local pages in it; its toolbar navigates.
+  handle(IPC.previewOpen, 'chat', async (url) => {
+    if (typeof url !== 'string') return { ok: false, error: 'Bad address.' }
+    await openPreview(url)
+    return ok(undefined)
+  })
+  handle(IPC.previewNav, 'preview', async (action, url) => {
+    const actions: PreviewAction[] = ['state', 'back', 'forward', 'reload', 'go', 'devtools', 'external']
+    if (!actions.includes(action as PreviewAction)) return { ok: false, error: 'Bad action.' }
+    return ok(await previewNav(action as PreviewAction, typeof url === 'string' ? url.slice(0, 2000) : undefined))
+  })
 
   // "Complete my text" popup (other apps)
   handle(IPC.composeChoose, 'compose', async (i) => ok(await chooseCompletion(i)))

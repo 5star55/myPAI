@@ -23,7 +23,7 @@ import OpenAI, {
 import type { Result } from '@shared/ipc'
 import { getConfig } from './config'
 import { mockReply } from './mock'
-import { withContext } from './ollama'
+import { isOllama, withContext } from './ollama'
 
 export type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 export type ToolSpec = OpenAI.Chat.ChatCompletionFunctionTool
@@ -44,6 +44,8 @@ export interface ModelReply {
 export interface CompleteRequest {
   messages: ChatMessage[]
   size: 'small' | 'big'
+  /** Use this model instead of the one for `size` (e.g. the vision model). */
+  model?: string
   tools?: ToolSpec[]
   /** Aborts the request (used by the off switch and the Stop button). */
   signal?: AbortSignal
@@ -59,7 +61,8 @@ export interface CompleteRequest {
 const TEMPERATURE = { big: 0.2, small: 0.6 }
 const CONTINUE_NOTE = 'Continue exactly where you stopped, mid-sentence if needed. Do not repeat anything or add a preamble.'
 
-const REQUEST_TIMEOUT_MS = 60_000
+// Long enough for a whole source file in one reply.
+const REQUEST_TIMEOUT_MS = 180_000
 
 let client: OpenAI | null = null
 function getClient(): OpenAI {
@@ -77,7 +80,7 @@ function getClient(): OpenAI {
 
 export async function complete(req: CompleteRequest): Promise<Result<ModelReply>> {
   const c = getConfig()
-  const model = req.size === 'big' ? c.bigModel : c.smallModel
+  const model = req.model || (req.size === 'big' ? c.bigModel : c.smallModel)
   const maxTokens = req.size === 'big' ? c.bigMaxTokens : c.smallMaxTokens
 
   if (c.mode === 'mock') {
@@ -106,7 +109,9 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
         messages,
         max_tokens: maxTokens, // required on every request
         temperature: req.temperature ?? TEMPERATURE[req.size],
-        ...(req.tools?.length ? { tools: req.tools } : {})
+        ...(req.tools?.length ? { tools: req.tools } : {}),
+        // Hosted reasoning models (e.g. Nemotron 3 on Nebius) otherwise spend the token budget thinking.
+        ...(isOllama(c.baseURL) ? {} : { chat_template_kwargs: { enable_thinking: false } })
       }
       let res: OpenAI.Chat.ChatCompletion
       if (req.onText) {
@@ -139,18 +144,38 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
   }
 }
 
-/** Turn library errors into one sentence a user can act on. */
+/**
+ * Turn library errors into one plain sentence for the user. The technical detail
+ * (server URL, .env hints) always goes to the log, and is shown only in mock mode.
+ */
 function describeError(err: unknown, model: string): string {
-  const { baseURL } = getConfig()
   if (err instanceof APIUserAbortError) return 'Stopped.'
+  const { baseURL, mode } = getConfig()
+  const [friendly, detail] = explainError(err, model, baseURL)
+  console.error(`[model] ${detail}`)
+  return mode === 'mock' ? `${friendly} (${detail})` : friendly
+}
+
+function explainError(err: unknown, model: string, baseURL: string): [friendly: string, detail: string] {
+  const local = isOllama(baseURL)
   // Order matters: the timeout class is a subclass of the connection class.
-  if (err instanceof APIConnectionTimeoutError) return `The model server at ${baseURL} took too long to answer.`
+  if (err instanceof APIConnectionTimeoutError)
+    return ['That took too long to answer. Please try again.', `${baseURL} timed out`]
   if (err instanceof APIConnectionError)
-    return `Can't reach the model server at ${baseURL}. If you use Ollama, is it running?`
-  if (err instanceof AuthenticationError) return 'The API key was rejected. Check MODEL_API_KEY in .env.'
+    return local
+      ? ["Can't reach the AI on this computer. Make sure Ollama is running.", `can't reach ${baseURL}`]
+      : ["Can't connect right now. Check your internet connection and try again.", `can't reach ${baseURL}`]
+  if (err instanceof AuthenticationError)
+    return ["pai couldn't sign in to its AI service. Its setup needs a valid key.", 'API key rejected; check MODEL_API_KEY in .env']
   if (err instanceof NotFoundError)
-    return `Model "${model}" was not found on the server. Check SMALL_MODEL / BIG_MODEL in .env (Ollama: run "ollama pull ${model}").`
-  if (err instanceof RateLimitError) return 'Rate limit reached. Wait a moment and try again.'
-  if (err instanceof APIError) return `The model server returned an error (${err.status ?? 'unknown'}): ${err.message}`
-  return `Unexpected error calling the model: ${err instanceof Error ? err.message : String(err)}`
+    return [
+      "pai's AI model isn't available right now. Its setup needs updating.",
+      `model "${model}" not found; check SMALL_MODEL / BIG_MODEL in .env${local ? ` or run "ollama pull ${model}"` : ''}`
+    ]
+  if (err instanceof RateLimitError) return ['Lots of requests right now. Wait a moment and try again.', 'rate limited (429)']
+  if (err instanceof APIError)
+    return (err.status ?? 0) >= 500
+      ? ['The AI service is having trouble right now. Please try again in a moment.', `server error ${err.status}: ${err.message}`]
+      : ['Something went wrong getting an answer. Please try again.', `server error ${err.status ?? 'unknown'}: ${err.message}`]
+  return ['Something went wrong getting an answer. Please try again.', err instanceof Error ? err.message : String(err)]
 }

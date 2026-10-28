@@ -75,7 +75,7 @@ const api: PaiApi = {
   openEcospace: () => call(IPC.openEcospace),
   askInChat: (text) => call(IPC.askInChat, text),
   toggleVoice: () => call(IPC.voiceToggle),
-  voiceReview: (action) => call(IPC.voiceReview, action),
+  voiceReview: (action, text) => call(IPC.voiceReview, action, text),
 
   composeChoose: (index) => call(IPC.composeChoose, index),
   composeCancel: () => call(IPC.composeCancel),
@@ -85,6 +85,9 @@ const api: PaiApi = {
   toggleChat: () => call(IPC.toggleChat),
   dragFloat: (dx, dy) => call(IPC.floatDrag, dx, dy),
   showFloatMenu: () => call(IPC.floatMenu),
+
+  openPreview: (url) => call(IPC.previewOpen, url),
+  previewNav: (action, url) => call(IPC.previewNav, action, url),
 
   on(event, cb) {
     if (!EVENT_NAMES.includes(event)) throw new Error(`Unknown event: ${event}`)

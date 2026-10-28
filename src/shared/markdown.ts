@@ -3,7 +3,7 @@
  *
  * It turns text into a list of blocks and inline pieces (never HTML), so the
  * UI renders them as React elements and model output can't inject markup.
- * Supports: headings (#), bullet and numbered lists, ```fenced code blocks```,
+ * Supports: headings (#), bullet and numbered lists, --- dividers, ```fenced code blocks```,
  * **bold**, *italic*, `code`, [links](https://...) and bare https:// links.
  */
 import { isWebUrl } from './clean'
@@ -17,10 +17,12 @@ export type Inline =
 
 export type Block =
   | { type: 'heading'; inline: Inline[] }
+  /** A --- line. */
+  | { type: 'divider' }
   | { type: 'paragraph'; lines: Inline[][] }
   | { type: 'list'; ordered: boolean; items: Inline[][] }
-  /** Shown exactly as written: no formatting, indentation kept. */
-  | { type: 'code'; lang: string; text: string }
+  /** Shown exactly as written: no formatting, indentation kept. `open` = not closed yet (still streaming). */
+  | { type: 'code'; lang: string; text: string; open?: true }
 
 const FENCE = /^\s*```\s*([\w+#.-]*)\s*$/
 
@@ -79,7 +81,10 @@ export function parseBlocks(text: string): Block[] {
     const bullet = line.match(/^\s*[-*•]\s+(.*)$/)
     const numbered = line.match(/^\s*\d{1,3}[.)]\s+(.*)$/)
     if (!line.trim()) flush()
-    else if (heading) {
+    else if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flush()
+      blocks.push({ type: 'divider' })
+    } else if (heading) {
       flush()
       blocks.push({ type: 'heading', inline: parseInline(heading[1]) })
     } else if (bullet || numbered) {
@@ -97,6 +102,6 @@ export function parseBlocks(text: string): Block[] {
   }
   flush()
   // Not closed yet (still streaming, or the model forgot): show it as code anyway.
-  if (code) blocks.push({ type: 'code', lang: code.lang, text: code.lines.join('\n') })
+  if (code) blocks.push({ type: 'code', lang: code.lang, text: code.lines.join('\n'), open: true })
   return blocks
 }

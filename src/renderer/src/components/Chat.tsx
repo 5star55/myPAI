@@ -22,7 +22,9 @@ import { handsFree } from '../voice/handsFree'
 import { Orb } from './Orb'
 import { RichText } from './RichText'
 import { CopyButton, LiveStep, StepList, StepRow, WorkingLine } from './Activity'
+import { ChatSendContext } from './QuizCard'
 import { toolLabel } from '../toolLabels'
+import { IMAGE_ACCEPT, pictureFiles, toImageDataUrl } from '../images'
 
 interface Message extends ChatTurn {
   id: number
@@ -37,6 +39,7 @@ const toStored = (m: Message): StoredMessage => ({
   role: m.role,
   content: m.content,
   at: m.at ?? new Date().toISOString(),
+  ...(m.images?.length ? { images: m.images } : {}),
   ...(m.steps?.length ? { steps: m.steps } : {}),
   ...(m.failed ? { failed: m.failed } : {})
 })
@@ -50,7 +53,20 @@ function loadHistoryOpen(): boolean {
 }
 
 /** What the model gets: everything except stopped/failed requests. */
-const forModel = (history: Message[]): ChatTurn[] => history.filter((m) => !m.failed).map(({ role, content }) => ({ role, content }))
+const forModel = (history: Message[]): ChatTurn[] =>
+  history.filter((m) => !m.failed).map(({ role, content, images }) => (images?.length ? { role, content, images } : { role, content }))
+
+/** "just now", "5 minutes ago", "11 hours ago", "3 days ago". */
+function timeAgo(iso: string | undefined): string {
+  const t = iso ? Date.parse(iso) : NaN
+  if (Number.isNaN(t)) return ''
+  const s = Math.max(0, (Date.now() - t) / 1000)
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'} ago`
+  if (s < 60) return 'just now'
+  if (s < 3600) return unit(Math.floor(s / 60), 'minute')
+  if (s < 86400) return unit(Math.floor(s / 3600), 'hour')
+  return unit(Math.floor(s / 86400), 'day')
+}
 
 const LIVE_CAPTION_EVERY_MS = 2500
 const SUGGEST_DEBOUNCE_MS = 120
@@ -71,6 +87,10 @@ function loadSpeakPref(): boolean {
 export function Chat({ assistantName, enabled }: { assistantName: string; enabled: boolean }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
+  /** Pictures waiting to be sent with the next message (data URLs). */
+  const [attachments, setAttachments] = useState<string[]>([])
+  const [dragging, setDragging] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [live, setLive] = useState<{ tool: string; target: string } | null>(null)
@@ -300,12 +320,16 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     return null
   }
 
-  function send(text: string): Promise<string | null> {
+  function send(text: string, images: string[] = []): Promise<string | null> {
     const content = text.trim()
-    if (!content || busyRef.current) return Promise.resolve(null)
-    const history = [...messagesRef.current, { id: nextId++, role: 'user' as const, content, at: new Date().toISOString() }]
+    if ((!content && !images.length) || busyRef.current) return Promise.resolve(null)
+    const history = [
+      ...messagesRef.current,
+      { id: nextId++, role: 'user' as const, content, at: new Date().toISOString(), ...(images.length ? { images } : {}) }
+    ]
     setMessages(history)
     setDraft('')
+    setAttachments([])
     scrollToLatest() // your own message always brings you to the bottom
     return requestReply(history)
   }
@@ -337,7 +361,7 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     const content = editText.trim()
     const all = messagesRef.current
     const at = all.findIndex((m) => m.id === editingId)
-    if (!content || at < 0 || busyRef.current || content.length > CHAT_LIMITS.maxMessageChars) return
+    if ((!content && !all[at]?.images?.length) || at < 0 || busyRef.current || content.length > CHAT_LIMITS.maxMessageChars) return
     const history = [...all.slice(0, at), { ...all[at], content, failed: undefined, at: new Date().toISOString() }]
     cancelEdit()
     setMessages(history)
@@ -442,6 +466,29 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     }
   }
 
+  /** Add pictures (picked, pasted or dropped) to the next message. */
+  async function attach(files: File[]) {
+    if (!files.length) return
+    const room = CHAT_LIMITS.maxImages - attachments.length
+    if (room <= 0) return setError(`At most ${CHAT_LIMITS.maxImages} pictures per message.`)
+    setError(files.length > room ? `Only the first ${room} picture${room === 1 ? '' : 's'} were added (max ${CHAT_LIMITS.maxImages}).` : null)
+    for (const file of files.slice(0, room)) {
+      try {
+        const url = await toImageDataUrl(file)
+        setAttachments((a) => (a.length < CHAT_LIMITS.maxImages ? [...a, url] : a))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't read that picture.")
+      }
+    }
+    inputRef.current?.focus()
+  }
+
+  /** The composer's submit: the typed text plus any pictures. */
+  function submit() {
+    if (voice.state === 'recording') void stopRecording(true)
+    else void send(draft, attachments)
+  }
+
   /** Send the last failed request again. */
   function retry() {
     const last = messagesRef.current.at(-1)
@@ -478,18 +525,19 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      if (voice.state === 'recording') void stopRecording(true)
-      else void send(draft)
+      submit()
     }
   }
 
   const tooLong = draft.length > CHAT_LIMITS.maxMessageChars
   const empty = messages.length === 0
-  const firstAsk = messages.find((m) => m.role === 'user')?.content.replace(/\s+/g, ' ').trim() ?? ''
+  const firstUser = messages.find((m) => m.role === 'user')
+  const firstAsk = firstUser?.content.replace(/\s+/g, ' ').trim() || (firstUser?.images?.length ? 'Picture' : '')
   const chatTitle = firstAsk ? (firstAsk.length > 60 ? `${firstAsk.slice(0, 59)}…` : firstAsk) : 'New chat'
   const lastId = messages.at(-1)?.id
 
   return (
+    <ChatSendContext.Provider value={(text) => void send(text)}>
     <div className="chat-wrap">
       {historyOpen && (
         <History
@@ -539,9 +587,15 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
 
         {messages.map((m) => (
           <div key={m.id} className={`msg msg-${m.role} ${m.failed ? 'msg-failed' : ''}`}>
-            {m.role === 'assistant' && <span className="avatar" aria-hidden />}
             <div className="msg-body">
               {m.steps && <StepList steps={m.steps} />}
+              {m.images?.length ? (
+                <div className="msg-images">
+                  {m.images.map((src, i) => (
+                    <img key={i} src={src} alt={`Picture ${i + 1}`} />
+                  ))}
+                </div>
+              ) : null}
               {editingId === m.id ? (
                 <div className="msg-edit">
                   <textarea
@@ -570,31 +624,52 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
                   </div>
                 </div>
               ) : (
-                <div className="bubble" onDoubleClick={() => m.role === 'user' && enabled && !busy && startEdit(m)}>
-                  {m.role === 'assistant' ? <RichText text={m.content} /> : m.content}
-                </div>
+                (m.role === 'assistant' || m.content) && (
+                  <div className="bubble" onDoubleClick={() => m.role === 'user' && enabled && !busy && startEdit(m)}>
+                    {m.role === 'assistant' ? <RichText text={m.content} /> : m.content}
+                  </div>
+                )
               )}
               {m.role === 'user' && editingId !== m.id && (
                 <div className="msg-actions">
-                  <CopyButton text={m.content} />
+                  <span className="msg-time" title={m.at ? new Date(m.at).toLocaleString() : undefined}>
+                    {timeAgo(m.at)}
+                  </span>
                   {enabled && !busy && (
-                    <button type="button" className="msg-action" onClick={() => startEdit(m)} title="Edit and ask again (or double-click the message)">
-                      Edit
+                    <button
+                      type="button"
+                      className="msg-action msg-icon"
+                      onClick={() => startEdit(m)}
+                      title="Edit and ask again (or double-click the message)"
+                      aria-label="Edit"
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                        <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                      </svg>
                     </button>
                   )}
+                  {m.content && <CopyButton text={m.content} icon />}
                 </div>
               )}
               {m.role === 'assistant' && (
-                <div className="msg-actions">
-                  <CopyButton text={m.content} />
-                  <button type="button" className="msg-action" onClick={() => speak(m.content)} title="Read aloud">
-                    Read aloud
+                <div className="msg-actions msg-actions-reply">
+                  <CopyButton text={m.content} icon />
+                  <button type="button" className="msg-action msg-icon" onClick={() => speak(m.content)} title="Read aloud" aria-label="Read aloud">
+                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                      <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
                   </button>
                   {m.id === lastId && enabled && !busy && (
-                    <button type="button" className="msg-action" onClick={regenerate} title="Ask again for a different answer">
-                      Regenerate
+                    <button type="button" className="msg-action msg-icon" onClick={regenerate} title="Ask again for a different answer" aria-label="Regenerate">
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+                        <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.8h-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </button>
                   )}
+                  <span className="msg-time" title={m.at ? new Date(m.at).toLocaleString() : undefined}>
+                    {timeAgo(m.at)}
+                  </span>
                 </div>
               )}
               {m.failed && (
@@ -613,7 +688,6 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
 
         {busy && (
           <div className="msg msg-assistant">
-            <span className="avatar avatar-busy" aria-hidden />
             <div className="msg-body">
               {(liveSteps.length > 0 || live) && (
                 <div className="acts">
@@ -667,15 +741,67 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
         </div>
       )}
 
+      {attachments.length > 0 && (
+        <div className="attach-strip" aria-label="Pictures to send">
+          {attachments.map((src, i) => (
+            <div key={i} className="attach-thumb">
+              <img src={src} alt={`Picture ${i + 1}`} />
+              <button type="button" onClick={() => setAttachments((a) => a.filter((_, j) => j !== i))} aria-label="Remove picture" title="Remove">
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <form
         ref={composerRef}
-        className={`composer glass ${voice.state === 'recording' ? 'composer-recording' : ''}`}
+        className={`composer glass ${voice.state === 'recording' ? 'composer-recording' : ''} ${dragging ? 'composer-drop' : ''}`}
         onSubmit={(e) => {
           e.preventDefault()
-          if (voice.state === 'recording') void stopRecording(true)
-          else void send(draft)
+          submit()
+        }}
+        onDragOver={(e) => {
+          if (![...e.dataTransfer.items].some((i) => i.kind === 'file')) return
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          if (enabled) void attach(pictureFiles(e.dataTransfer.files))
         }}
       >
+        <input
+          ref={fileRef}
+          type="file"
+          accept={IMAGE_ACCEPT}
+          multiple
+          hidden
+          onChange={(e) => {
+            void attach(pictureFiles(e.target.files))
+            e.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => fileRef.current?.click()}
+          disabled={!enabled || busy || attachments.length >= CHAT_LIMITS.maxImages}
+          aria-label="Add a picture"
+          title="Add a picture (or paste / drop one here)"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+            <path
+              d="M20.5 11.5l-8.1 8.1a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
         <button
           type="button"
           className={`icon-btn mic ${voice.state === 'recording' ? 'mic-on' : ''}`}
@@ -712,6 +838,12 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
             if (voice.state === 'recording') dictation.userChanged(e.target.value)
           }}
           onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            const pics = pictureFiles(e.clipboardData.files)
+            if (!pics.length) return
+            e.preventDefault()
+            void attach(pics)
+          }}
           placeholder={
             !enabled ? `${assistantName} is off` : voice.state === 'recording' ? 'Listening… your words will appear here' : `Message ${assistantName}…`
           }
@@ -744,7 +876,12 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
             </svg>
           </button>
         ) : (
-          <button className="send" type="submit" disabled={!enabled || (!draft.trim() && voice.state !== 'recording') || tooLong} aria-label="Send">
+          <button
+            className="send"
+            type="submit"
+            disabled={!enabled || (!draft.trim() && !attachments.length && voice.state !== 'recording') || tooLong}
+            aria-label="Send"
+          >
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
               <path d="M4 12h13M12 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -756,9 +893,10 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
           ? `Too long: ${draft.length}/${CHAT_LIMITS.maxMessageChars} characters`
           : voice.state === 'recording'
             ? 'Mic on · fix any word as you go · 🎤 stops (text stays) · Enter sends'
-            : 'Enter to send · Shift+Enter for a new line · Tab takes a suggestion'}
+            : 'Enter to send · Shift+Enter for a new line · paste or drop pictures'}
       </p>
     </main>
     </div>
+    </ChatSendContext.Provider>
   )
 }
