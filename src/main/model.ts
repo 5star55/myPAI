@@ -21,7 +21,7 @@ import OpenAI, {
   RateLimitError
 } from 'openai'
 import type { Result } from '@shared/ipc'
-import { getConfig } from './config'
+import { getConfig, needsApiKey } from './config'
 import { mockReply } from './mock'
 import { isOllama, withContext } from './ollama'
 
@@ -74,18 +74,33 @@ class StalledError extends Error {}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-let client: OpenAI | null = null
+/** Shown when no key is set (the packaged app, before one is pasted in Settings). */
+export const NO_KEY_MESSAGE = 'Add your Nebius API key in Settings → AI model to start using pai.'
+
+let client: { key: string; api: OpenAI } | null = null
+/** One client per key: a key pasted in Settings is used from the next request on. */
 function getClient(): OpenAI {
-  if (!client) {
-    const c = getConfig()
-    client = new OpenAI({
-      baseURL: c.baseURL,
-      apiKey: c.apiKey,
-      timeout: REQUEST_TIMEOUT_MS,
-      maxRetries: 1
-    })
+  const c = getConfig()
+  if (!client || client.key !== c.apiKey) {
+    client = { key: c.apiKey, api: new OpenAI({ baseURL: c.baseURL, apiKey: c.apiKey, timeout: REQUEST_TIMEOUT_MS, maxRetries: 1 }) }
   }
-  return client
+  return client.api
+}
+
+/**
+ * Is this key accepted by the model server? Asks for its model list (cheap, uses no tokens).
+ * 'unreachable' = offline or the server failed, so the key could not be checked either way.
+ */
+export async function checkApiKey(key: string): Promise<'ok' | 'rejected' | 'unreachable'> {
+  const { baseURL } = getConfig()
+  try {
+    await new OpenAI({ baseURL, apiKey: key, timeout: 15_000, maxRetries: 0 }).models.list()
+    return 'ok'
+  } catch (err) {
+    if (err instanceof AuthenticationError || (err instanceof APIError && err.status === 403)) return 'rejected'
+    console.warn('[model] could not check the API key:', err instanceof Error ? err.message : err)
+    return 'unreachable'
+  }
 }
 
 export async function complete(req: CompleteRequest): Promise<Result<ModelReply>> {
@@ -107,6 +122,8 @@ export async function complete(req: CompleteRequest): Promise<Result<ModelReply>
     }
     return { ok: true, value: { ...reply, model: `mock-${req.size}` } }
   }
+
+  if (needsApiKey()) return { ok: false, error: NO_KEY_MESSAGE }
 
   try {
     const name = await withContext(model, c.baseURL, c.contextTokens)
@@ -225,7 +242,7 @@ function explainError(err: unknown, model: string, baseURL: string): [friendly: 
       ? ["Can't reach the AI on this computer. Make sure Ollama is running.", `can't reach ${baseURL}`]
       : ["Can't connect right now. Check your internet connection and try again.", `can't reach ${baseURL}`]
   if (err instanceof AuthenticationError)
-    return ["pai couldn't sign in to its AI service. Its setup needs a valid key.", 'API key rejected; check MODEL_API_KEY in .env']
+    return ['Your API key was rejected. Paste a valid Nebius key in Settings → AI model.', 'API key rejected (Settings → AI model, or MODEL_API_KEY in .env)']
   if (err instanceof NotFoundError)
     return [
       "pai's AI model isn't available right now. Its setup needs updating.",

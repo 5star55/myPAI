@@ -11,6 +11,8 @@ import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences, type Ipc
 import { IPC, MAX_REVIEW_CHARS, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
 import { cancelRun, runChat } from './agent/loop'
 import { getPublicConfig } from './config'
+import { checkApiKey } from './model'
+import { checkKeyShape, removeApiKey, saveApiKey } from './store/apiKey'
 import { refreshProactive, respondOffer } from './proactive/engine'
 import { denyAllPending, respondPermission } from './security/permissions'
 import { deleteUserSkill, getSkill, installImport, listSkills, loadSkills, previewImport, saveUserSkill, showUserSkillsFolder } from './skills/loader'
@@ -307,6 +309,24 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.toggleChat, 'any', () => ok(toggleChat()))
   handle(IPC.floatDrag, 'float', (dx, dy) => ok(dragFloat(Number(dx), Number(dy))))
   handle(IPC.floatMenu, 'float', () => ok(showFloatMenu(menu)))
+
+  // The model API key: pasted in Settings / setup, checked with the server, stored encrypted in the data folder.
+  handle(IPC.apiKeySave, 'chat', async (raw) => {
+    const key = typeof raw === 'string' ? raw.trim() : ''
+    const problem = checkKeyShape(key)
+    if (problem) return { ok: false, error: problem }
+    const check = await checkApiKey(key)
+    if (check === 'rejected') return { ok: false, error: 'Nebius rejected that key. Check that you copied the whole key, and that it is still active.' }
+    saveApiKey(key)
+    broadcast('data:changed', { what: 'config' })
+    const note = check === 'unreachable' ? "Saved, but it couldn't be checked right now (no connection?). It will be used once you're online." : undefined
+    return ok({ config: getPublicConfig(), ...(note ? { note } : {}) })
+  })
+  handle(IPC.apiKeyRemove, 'chat', () => {
+    removeApiKey()
+    broadcast('data:changed', { what: 'config' })
+    return ok(getPublicConfig())
+  })
 
   // Preview browser: the chat opens local pages in it; its toolbar navigates.
   handle(IPC.previewOpen, 'chat', async (url) => {

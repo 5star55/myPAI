@@ -20,6 +20,12 @@ export interface PublicConfig {
   smallModel: string
   bigModel: string
   hasApiKey: boolean
+  /** Live on a hosted server with no key: the user must paste one in Settings → AI model. */
+  needsApiKey: boolean
+  /** Where the key comes from (the key itself never reaches the UI). */
+  apiKeySource: 'settings' | 'env' | 'none'
+  /** Its last 4 characters ("…a1b2"), or '' when there is none. */
+  apiKeyHint: string
   webSearchConfigured: boolean
   /** Problems found in .env, shown to the user instead of crashing. */
   warnings: string[]
@@ -477,6 +483,8 @@ export const IPC = {
   composeCancel: 'compose:cancel',
   composeAction: 'compose:action',
   composeAccess: 'compose:access',
+  apiKeySave: 'api-key:save',
+  apiKeyRemove: 'api-key:remove',
   previewOpen: 'preview:open',
   previewNav: 'preview:nav'
 } as const
@@ -489,7 +497,7 @@ export interface EventMap {
   'state:changed': AppState
   'offer:show': Offer
   'offer:clear': { id: string }
-  'data:changed': { what: 'memory' | 'activity' | 'reminders' | 'profile' | 'skills' | 'conversations' }
+  'data:changed': { what: 'memory' | 'activity' | 'reminders' | 'profile' | 'skills' | 'conversations' | 'config' }
   /** Main asks the chat screen to send this message (accepted proactive offer). */
   'chat:prefill': { text: string }
   /** Hotkey pressed: start/stop a hands-free conversation (sent to the chat window). */
@@ -668,6 +676,14 @@ export interface PaiApi {
   /** Move the floating icon by a screen-pixel delta. */
   dragFloat(dx: number, dy: number): Promise<Result<void>>
   showFloatMenu(): Promise<Result<void>>
+
+  /**
+   * Save the model API key pasted in Settings (stored encrypted in pai's data folder).
+   * It is checked with the server first; a rejected key is not saved. `note` explains a key
+   * that was saved without being checked (e.g. offline).
+   */
+  saveApiKey(key: string): Promise<Result<{ config: PublicConfig; note?: string }>>
+  removeApiKey(): Promise<Result<PublicConfig>>
 
   /** Open a local address (e.g. http://localhost:3000) in the preview browser. */
   openPreview(url: string): Promise<Result<void>>

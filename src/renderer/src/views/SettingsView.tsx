@@ -13,6 +13,7 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { DEFAULT_COMPOSE_APPS, hotkeyLabelFor, isValidHotkey } from '@shared/compose'
 import { VOICE_HOTKEY, type AppState, type ComposeAccess, type Profile, type PublicConfig, type SkillInfo } from '@shared/ipc'
+import { ApiKeyField } from '../components/ApiKeyField'
 import { FoldersField, IdentityFields, PermissionsField, SkillsField } from '../components/ProfileFields'
 import { Toggle } from '../components/Toggle'
 import { VoicePicker } from '../components/VoicePicker'
@@ -22,10 +23,12 @@ interface Props {
   state: AppState
   config: PublicConfig | null
   onSaved: (p: Profile) => void
+  onConfig: (c: PublicConfig) => void
 }
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 12h2M18 12h2M12 4v2M12 18v2' },
+  { id: 'model', label: 'AI model', icon: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v-3h2v-2h2l1.1-1.1A4 4 0 0 1 15 7zM16 10h.01' },
   { id: 'personality', label: 'Personality', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20c1.5-4 4.5-6 8-6s6.5 2 8 6' },
   { id: 'voice', label: 'Voice', icon: 'M9 3h6v11H9zM5 11a7 7 0 0 0 14 0M12 18v3' },
   { id: 'writing', label: 'Writing', icon: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4' },
@@ -50,7 +53,7 @@ function loadSection(): Section {
   return 'general'
 }
 
-export function SettingsView({ profile: saved, state, config, onSaved }: Props) {
+export function SettingsView({ profile: saved, state, config, onSaved, onConfig }: Props) {
   const [section, setSection] = useState<Section>(loadSection)
   const [profile, setProfile] = useState(saved)
   const [skills, setSkills] = useState<SkillInfo[]>([])
@@ -112,25 +115,6 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
                 <Toggle on={profile.proactive} onChange={(on) => set({ proactive: on })} label="Proactive offers" />
               </Row>
             </Card>
-            {config && (
-              <Card title="Model">
-                <Row label="Mode">
-                  <span className={`chip chip-${config.mode}`}>{config.mode === 'mock' ? 'MOCK' : 'LIVE'}</span>
-                </Row>
-                <Row label="Chat model">
-                  <code>{config.smallModel}</code>
-                </Row>
-                <Row label="Tool model">
-                  <code>{config.bigModel}</code>
-                </Row>
-                <Row label="Web search">
-                  <span className={config.webSearchConfigured ? 'ok-text' : 'muted'}>{config.webSearchConfigured ? 'Configured' : 'Not configured'}</span>
-                </Row>
-                <p className="card-foot">
-                  These come from <code>.env</code>. Edit it and restart {name} to change them.
-                </p>
-              </Card>
-            )}
             <NotificationsCard name={name} />
             <Card title="Start over">
               <Row label="Re-run “Generate your AI”" help="Walk through setup again. Memory, chats and logs are kept.">
@@ -145,6 +129,33 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
                 </button>
               </Row>
             </Card>
+          </Page>
+        )}
+
+        {section === 'model' && (
+          <Page title="AI model" sub={`The key ${name} uses to reach its AI (NVIDIA Nemotron on Nebius Token Factory), and which models it uses.`}>
+            <Card title="Nebius API key">
+              <ApiKeyField config={config} onChange={onConfig} />
+            </Card>
+            {config && (
+              <Card title="Models">
+                <Row label="Mode">
+                  <span className={`chip chip-${config.mode}`}>{config.mode === 'mock' ? 'MOCK' : 'LIVE'}</span>
+                </Row>
+                <Row label="Chat model">
+                  <code>{config.smallModel}</code>
+                </Row>
+                <Row label="Tool model">
+                  <code>{config.bigModel}</code>
+                </Row>
+                <Row label="Web search">
+                  <span className={config.webSearchConfigured ? 'ok-text' : 'muted'}>{config.webSearchConfigured ? 'Configured' : 'Not configured'}</span>
+                </Row>
+                <p className="card-foot">
+                  The installed app uses these models on Nebius. When running from source, <code>.env</code> can change them (restart {name} after editing it).
+                </p>
+              </Card>
+            )}
           </Page>
         )}
 

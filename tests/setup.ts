@@ -33,6 +33,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: () => {} },
   dialog: {},
   Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
+  // No keychain in tests: keys are stored with the plain fallback.
+  safeStorage: { isEncryptionAvailable: () => false, encryptString: (s: string) => Buffer.from(s), decryptString: (b: Buffer) => b.toString() },
   screen: {}
 }))
 

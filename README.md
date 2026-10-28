@@ -34,6 +34,18 @@ Electron + React + TypeScript, for macOS and Windows. It runs on **NVIDIA Nemotr
 | **Generate your AI** | First-run setup: name, tone, folders, permissions, skills |
 | **Proactive offers** | Based on the active app and the Downloads folder. Accept, dismiss or snooze, plus a quiet mode. They never act on their own |
 
+## Installed app: add your Nebius API key
+
+The installed app (from `npm run dist`) runs NVIDIA Nemotron on Nebius Token Factory and needs **your own Nebius API key**. No key is built into the app.
+
+1. Get a key at [Nebius Token Factory](https://tokenfactory.nebius.com/) (API keys).
+2. Open pai. During first-run setup, paste it under **Your Nebius API key**, or later in **Settings → AI model → Nebius API key**, and press **Save**.
+3. pai checks the key with Nebius before saving it. A rejected key is not saved.
+
+Until a key is saved, pai shows a banner (“Add your Nebius API key to start using pai”) and every chat or task answers with the same message instead of failing.
+
+**Where the key is kept:** in pai's user-data folder (`~/Library/Application Support/pai/api-key.bin` on macOS, `%APPDATA%\pai\api-key.bin` on Windows), encrypted with the system keychain (Electron `safeStorage`). It is never written to the repo or the installer, never shown again in the app (only its last 4 characters), never passed to terminal commands, and pai's own tools can't read that folder. **Remove** in Settings deletes it.
+
 ## Setup and run from source
 
 _Requirements: Node.js 20+ and npm. Optional, for *Complete my text*: Xcode command line tools on macOS (`xcode-select --install`), or the .NET 10 SDK on Windows. Without them the rest of the app works normally._
@@ -52,22 +64,24 @@ npm start
 | `npm run dev` | Run with hot reload while you code |
 | `npm test` | Run the test suite (allowlist, permissions, tools, agent loop, proactive) |
 | `npm run typecheck` | TypeScript checks for all code |
+| `npm run dist` | Build the installer into `dist/` (`.dmg` on macOS, `.exe` on Windows). See [Building installers](#building-installers) |
 
 On first launch, the **Generate your AI** setup runs. You can re-run it later from Settings → Start over.
 
 ## Model configuration
 
-All model settings live in `.env` and are read only by [`src/main/config.ts`](src/main/config.ts). Restart after editing.
+When running from source, model settings live in `.env` and are read only by [`src/main/config.ts`](src/main/config.ts). Restart after editing. The installed app never reads a `.env`: it uses Nemotron on Nebius with the key from Settings. A key saved in **Settings → AI model** always wins over `MODEL_API_KEY` in `.env`.
 
 | Variable | Meaning |
 | --- | --- |
 | `MODEL_MODE` | `mock` (scripted replies and fake tool calls, no API) or `live` |
 | `MODEL_BASE_URL` | Any OpenAI-compatible endpoint |
-| `MODEL_API_KEY` | API key (any text for Ollama) |
+| `MODEL_API_KEY` | API key when running from source (any text for Ollama). The installed app uses the key pasted in Settings → AI model instead |
+| `VISION_MODEL` | Model that describes attached pictures (e.g. `nvidia/Nemotron-3.5-Super-VL`) |
 | `SMALL_MODEL` | Everyday chat |
 | `BIG_MODEL` | Tool calling |
-| `SMALL_MAX_TOKENS` / `BIG_MAX_TOKENS` | Reply length limits (default 1024 / 1536). Replies cut off at the limit are continued automatically |
-| `MODEL_CONTEXT_TOKENS` | How much the model reads at once (default 8192). Long chats are trimmed to fit, oldest messages first; the instructions always stay |
+| `SMALL_MAX_TOKENS` / `BIG_MAX_TOKENS` | Reply length limits (hosted default 4096 / 8192; Ollama 1024 / 1536). Replies cut off at the limit are continued automatically |
+| `MODEL_CONTEXT_TOKENS` | How much the model reads at once (hosted default 65536; Ollama 8192). Long chats are trimmed to fit, oldest messages first; the instructions always stay |
 | `TAVILY_API_KEY` | Optional: web search |
 | `PAI_DATA_DIR` | Optional: store pai's data in another folder (e.g. for testing) |
 
@@ -248,9 +262,19 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 - The folder allowlist resolves `~`, `..` and symlinks before checking. pai's own data folder, its code and `.env`, system folders and credential folders can never be touched.
 - Nothing is permanently deleted: deletes and overwrites go to the Trash.
 - Window titles stay in memory only, never on disk or in the log. pai never reads the clipboard.
-- API keys stay in `.env` (git-ignored) and never reach the UI.
+- API keys never reach the UI or terminal commands. From source they stay in `.env` (git-ignored); in the installed app the key pasted in Settings is stored encrypted in the user-data folder. `.env` is never packaged (see [Building installers](#building-installers)).
 - Your data (profile, memory, log, reminders) lives in your OS user-data folder, e.g. `~/Library/Application Support/pai` on macOS.
 - Reminders you set keep firing while the assistant is switched off, since they're your own notifications. Everything else stops.
+
+## Building installers
+
+```bash
+npm run dist        # → dist/pai-<version>.dmg (macOS) or dist/pai Setup <version>.exe (Windows)
+```
+
+[`electron-builder.yml`](electron-builder.yml) ships **only** `out/`, `skills/`, `resources/`, `native/bin/` and `package.json` (plus production dependencies), and excludes every `.env` / `.env.*` file anywhere. Nothing from your `.env` (key, models, settings) ends up in the installer, so each user pastes their own key. To check a build: `npx @electron/asar list dist/mac-arm64/pai.app/Contents/Resources/app.asar | grep .env` prints nothing.
+
+The text helper for *Complete my text* is unpacked next to the app archive (`app.asar.unpacked`) so it can run. Builds are unsigned unless you set up code signing (macOS will ask users to confirm the first launch).
 
 ## Known limitations
 
