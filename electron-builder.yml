@@ -23,3 +23,5 @@ mac:
     NSMicrophoneUsageDescription: pai listens when you use the mic or hands-free voice. Speech is turned into text on this computer.
 win:
   target: nsis
+nsis:
+  artifactName: pai-${version}-setup.${ext}

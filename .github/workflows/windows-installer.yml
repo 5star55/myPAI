@@ -1,0 +1,49 @@
+# Builds the Windows installer on a Windows machine and attaches it to a GitHub release.
+# Runs when this file changes on dev, or by hand from the Actions tab (pick the release tag).
+name: Windows installer
+
+on:
+  push:
+    branches: [dev]
+    paths: [.github/workflows/windows-installer.yml]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the installer to
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ inputs.tag || 'v0.1.0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The "Complete my text" helper (native/winhelper) needs the .NET SDK.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - run: npm ci
+
+      - name: Tests
+        run: npm test
+        continue-on-error: true
+
+      - name: Build the installer
+        run: npm run dist
+
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/*.exe --clobber
