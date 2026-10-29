@@ -1,6 +1,6 @@
 # pai — Personal AI Generator
 
-A private personal AI assistant that runs on your PC, remembers you, and **asks permission before acting**.
+A private personal AI assistant that runs on your PC, remembers you, builds and runs apps for you, quizzes you, understands pictures, and **asks permission before acting**.
 
 Electron + React + TypeScript, for macOS and Windows. It runs on **NVIDIA Nemotron through Nebius Token Factory**, or fully on your own computer with a local model through Ollama (or offline in mock mode). You switch between them by editing `.env` only.
 
@@ -8,7 +8,8 @@ Electron + React + TypeScript, for macOS and Windows. It runs on **NVIDIA Nemotr
 
 - **NVIDIA Nemotron on Nebius Token Factory**: one `.env` switch moves the whole agent (chat, tool calling, tasks, *Complete my text*) to Nemotron. See [NVIDIA Nemotron and Nebius](#nvidia-nemotron-and-nebius).
 - **Private by default**: speech-to-text (Whisper) and text-to-speech run on your computer; with Ollama, so does the model.
-- **Asks before acting**: every file change, command and app launch goes through a permission dialog and a folder allowlist enforced in code.
+- **A coding assistant that does the work**: it scaffolds, edits, installs, runs a dev server and checks the result in its own preview window. See [Coding assistant](#coding-assistant).
+- **Asks before acting**: every file change, command and app launch goes through a permission dialog, and protected places are refused in code. Projects pai created itself don't ask at every step.
 - **Open source** under the OSI-approved **MIT License**.
 
 ## Features
@@ -16,22 +17,27 @@ Electron + React + TypeScript, for macOS and Windows. It runs on **NVIDIA Nemotr
 | | |
 | --- | --- |
 | **Ecospace** (home screen) | Give tasks by typing or talking. Each runs in the background as a live card (steps, timer, *Needs you* when waiting for permission), up to 3 at once, and the rest queue. Finished tasks are saved with all their details. The floating orb opens a **mini Ecospace** |
-| **Chat** | Replies stream in live, with code blocks (Copy button), Copy / Read aloud / Regenerate on every reply, and **Edit** on your own messages (the conversation is answered again from there). Chat window plus a floating always-on-top orb (click: mini Ecospace, drag: move, right-click: menu) |
+| **Chat** | A reading-column layout: replies stream in as plain text, with code blocks (Copy button), and Copy / Read aloud / Regenerate icons and the time under each reply. **Edit** your own messages (the conversation is answered again from there). Chat window plus a floating always-on-top orb (click: mini Ecospace, drag: move, right-click: menu) |
+| **Send while it works** | Type while a reply is running and press Enter: the message is read at the next step and changes what pai does (“make it dark”). If the reply finishes first, it is sent next |
+| **Coding assistant** | Ask it to build or fix an app: it explores the project, edits files, installs, starts a dev server and checks the page (text and console errors) in a **preview window**, then fixes what fails. See [Coding assistant](#coding-assistant) |
+| **Pictures** | Attach, paste or drop up to 4 pictures per message. `VISION_MODEL` (Nemotron VL) describes each one for the main model, copying any text exactly, so pai can still use its tools on the same turn |
+| **Interactive quizzes** | The **Quiz Master** skill (on by default, used only when you ask for a quiz) shows clickable quiz cards: pick an answer, see right or wrong with an explanation, then your score, **Try again** and **Review my mistakes**. Questions appear as they are written |
 | **Chat or task?** | Type a question into the Ecospace and pai offers to ask it in Chat instead (a fast keyword check, no model call) |
 | **Complete my text** | Writing an email or message in another app? Press **⌃⌥Space** (Ctrl+Alt+Space on Windows) and pick one of 3 ways to finish your sentence; it's typed in for you. Only in apps you allow, never in password fields (macOS and Windows) |
 | **Live suggestions** | Chips appear while you type or speak: matching files in your approved folders, installed apps, reminder times, searches. Tab or click to use. Worked out locally in milliseconds, with no model call |
 | **Voice** | Mic button: your words appear **live in the message box** as you speak (transcribed on your computer by Whisper), and you can fix any word while the mic is on. Speaker button: replies are read aloud with your OS voices |
 | **Hands-free** | Press **⌘⇧Space** (Ctrl+Shift+Space) in any app, or say **“Hey [assistant name]”** (optional). You see your words live on the orb; nothing is sent until you press *Send* (fix any misheard word first), then you hear the answer. Safe actions can be approved by saying “yes” |
-| **Tools** | Create, read, list, move, rename, organize and delete files (delete goes to the Trash), summarize documents, **run terminal commands**, open apps, reminders (one-time and repeating), web search (Tavily, shown as result cards), memory |
-| **Shows its work** | A live "✻ Thinking… (8s · esc to stop)" line and one row per action (`⏺ Ran ls -la`, `⎿ output`), expandable |
+| **Tools** (23) | Files: create, read (also line ranges), list, move, rename, organize, delete (to the Trash), summarize documents. Code: find files, search code, exact-text edits. **Terminal commands**, dev servers (start, read output, stop) and the preview. Open apps and settings pages, reminders (one-time and repeating), web search (Tavily, shown as result cards), memory |
+| **Shows its work** | A live "Thinking… (8s · esc to stop)" line and one row per action (`⏺ Ran ls -la`, `⎿ output`). When the reply is done, the steps fold into one line such as “Created 2 files, started a server ▸”, and what pai said between steps stays visible |
 | **Chat history** | Every conversation is saved in full on your computer: messages, times, each step with its output, and web results. Search, reopen, rename or delete chats |
-| **Permissions** | A dialog before **every** action, showing the exact path. Approvals last for the session, or "always for this folder". Deletes and overwrites need a second confirmation |
-| **Folder allowlist** | Enforced in code. Paths outside your approved folders get a special warning and are never remembered automatically. System folders, key folders and pai's own files are always refused |
+| **Permissions** | A dialog before **every** action, showing the exact path or command. Approvals last for the session, or "always for this folder". Deletes and overwrites need a second confirmation. **Made by pai:** inside folders pai created itself (a scaffolded project), reading, editing and normal commands don't ask each time; deletes and risky commands still do (Settings → Folders lists them) |
+| **Folder access** | **Allow all folders** (the default): pai can work with files anywhere, and every change still asks first; “always allow” covers one top folder such as `~/Projects`, never your whole home or drive. Switch it off in Settings → Folders to allow only approved folders (others get a special warning and are never remembered). Either way, system folders, key folders and pai's own files are always refused, in code |
 | **Off switch** | One click (top bar, or right-click the orb). Stops the reply in progress and denies everything pending |
 | **Activity log** | Time, tool, target and result for everything the assistant tried |
-| **Memory** | Facts in a local JSON file, which you can view, edit and delete |
-| **Skills** | Markdown or JSON files in `skills/`, toggled on or off |
-| **Generate your AI** | First-run setup: name, tone, folders, permissions, skills |
+| **Memory** | Lasting facts you mention (“I'm 19”, “my sister is Ada”) are saved automatically, and out-of-date ones replaced. Stored in a local JSON file you can view, edit and delete. pai never guesses facts about you |
+| **Skills** | Markdown or JSON files in `skills/`, toggled on or off. Built in: Quiz Master, Daily Planner, File Organizer, Research Assistant. A skill with `triggers` is only used when your message asks for it |
+| **Generate your AI** | First-run setup: your Nebius API key (installed app), name, tone, folders, permissions, skills |
+| **Reliable** | Every request streams. A stalled, dropped or failed request is retried automatically (before anything was shown). Idle CPU stays around 2%: animations stop when nothing is happening |
 | **Proactive offers** | Based on the active app and the Downloads folder. Accept, dismiss or snooze, plus a quiet mode. They never act on their own |
 
 ## Installed app: add your Nebius API key
@@ -78,8 +84,8 @@ When running from source, model settings live in `.env` and are read only by [`s
 | `MODEL_BASE_URL` | Any OpenAI-compatible endpoint |
 | `MODEL_API_KEY` | API key when running from source (any text for Ollama). The installed app uses the key pasted in Settings → AI model instead |
 | `VISION_MODEL` | Model that describes attached pictures (e.g. `nvidia/Nemotron-3.5-Super-VL`) |
-| `SMALL_MODEL` | Everyday chat |
-| `BIG_MODEL` | Tool calling |
+| `SMALL_MODEL` | Everyday chat (and quizzes, memory) |
+| `BIG_MODEL` | Tool calling and coding |
 | `SMALL_MAX_TOKENS` / `BIG_MAX_TOKENS` | Reply length limits (hosted default 4096 / 8192; Ollama 1024 / 1536). Replies cut off at the limit are continued automatically |
 | `MODEL_CONTEXT_TOKENS` | How much the model reads at once (hosted default 65536; Ollama 8192). Long chats are trimmed to fit, oldest messages first; the instructions always stay |
 | `TAVILY_API_KEY` | Optional: web search |
@@ -110,9 +116,12 @@ pai was built and tested with **NVIDIA Nemotron** models served by **Nebius Toke
 MODEL_MODE=live
 MODEL_BASE_URL=https://api.tokenfactory.nebius.com/v1/
 MODEL_API_KEY=<your Token Factory key>
-SMALL_MODEL=<Nemotron model ID for chat>
-BIG_MODEL=<Nemotron model ID for tool calling>
+SMALL_MODEL=nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+BIG_MODEL=nvidia/nemotron-3-super-120b-a12b
+VISION_MODEL=nvidia/Nemotron-3.5-Super-VL
 ```
+
+The installed app uses these three models by default, with the key pasted in Settings.
 
 To list the model IDs your key can use, run the `curl` command in `.env.example`.
 
@@ -121,7 +130,8 @@ To list the model IDs your key can use, run the `curl` command in `.env.example`
 | Role | Nemotron variant | Used for |
 | --- | --- | --- |
 | `SMALL_MODEL` | A smaller, faster Nemotron | Everyday chat, *Complete my text* suggestions, document summaries |
-| `BIG_MODEL` | A larger Nemotron | Tool calling: Ecospace tasks, files, commands, reminders, web search, memory |
+| `BIG_MODEL` | A larger Nemotron | Tool calling: Ecospace tasks, the coding assistant, files, commands, reminders, web search, memory |
+| `VISION_MODEL` | Nemotron VL | Describes attached pictures for the other models |
 
 A keyword router ([`src/shared/intent.ts`](src/shared/intent.ts)) sends each message to the right model: questions and writing go to the small model with no tools, requests to *do* something go to the big model with the tools that request needs ([`src/main/agent/context.ts`](src/main/agent/context.ts)).
 
@@ -162,8 +172,10 @@ One tool call goes through these steps in [`src/main/agent/loop.ts`](src/main/ag
 1. Off switch on? → stop.
 2. Tool exists and its permission group is enabled? (Disabled tools are never even offered to the model.)
 3. `prepare()` validates the arguments and the path. It touches nothing and returns exactly what it will do.
-4. **Permission dialog** (a second one for destructive actions). Outside folders get a warning.
-5. `run()`. The result goes back to the model wrapped as **data**, and is written to the activity log.
+4. **Permission dialog** (a second one for destructive actions). Skipped only for reads and normal edits inside a folder pai created, and for commands in “run and report” mode. With *Allow all folders* off, other folders get a warning.
+5. `run()`. The result goes back to the model wrapped as **data**, and is written to the activity log. A call that already failed in the same reply is not run again; the model is told to try something different.
+
+Messages you send while it works are added between steps. Lasting facts in your message are saved to memory alongside the reply ([`src/main/agent/autoMemory.ts`](src/main/agent/autoMemory.ts)). Pictures are described by the vision model first.
 
 The small model handles everyday chat. A keyword router ([`src/shared/intent.ts`](src/shared/intent.ts)) sends action requests to the big model, together with only the tools that request needs. Each request is trimmed to fit the context window first ([`src/main/agent/context.ts`](src/main/agent/context.ts)).
 
@@ -172,18 +184,19 @@ The small model handles everyday chat. A keyword router ([`src/shared/intent.ts`
 ```
 src/main/            Node side: all privileged work
   config.ts          the ONLY place for model settings
-  model.ts, mock.ts  model calls (live + mock)
-  agent/             tool-calling loop and router
-  tools/             one file per tool group + registry
+  model.ts, mock.ts  model calls (live + mock), streaming and retries
+  agent/             tool-calling loop, router, automatic memory
+  tools/             one file per tool group + registry (files, code, shell, servers…)
   security/          folder allowlist + permission broker
-  store/             profile, state, memory, reminders, activity log, approvals
+  store/             profile, state, memory, reminders, activity log, approvals,
+                     API key (encrypted), folders pai created
   skills/            skill file loader
   reminders/         notification scheduler
   proactive/         active window, Downloads watcher, offer rules
-  windows/           chat window, floating orb
+  windows/           chat window, floating orb, preview browser, tray
 src/preload/         the only bridge to the UI (window.pai)
 src/renderer/src/    React UI: views/, components/, styles.css (design tokens)
-src/shared/ipc.ts    the typed contract between main and UI
+src/shared/ipc.ts    the typed contract between main and UI (quiz.ts: the quiz format)
 skills/              one .md or .json file per skill
 tests/               Vitest tests (Electron is faked)
 ```
@@ -201,20 +214,36 @@ The file format:
 name: Study Buddy
 description: Quizzes you on your notes.
 permissions: documents, memory
+triggers: study, revise, my notes
 ---
 When the user asks to study, summarize their notes file and ask 3 quiz questions...
 ```
 
-`permissions` must be names from: `files_read, files_write, files_delete, documents, apps, reminders, web, memory`. A skill stays inactive until all of them are on.
+`permissions` must be names from: `files_read, files_write, files_delete, documents, apps, reminders, web, memory, shell`. A skill stays inactive until all of them are on. `triggers` is optional: with it, the skill is only added to the prompt when your message uses one of those words (so a quiz skill doesn't turn every question into a quiz).
 
 ## Terminal commands
 
 Settings → Commands → choose **Ask every time** (default: each command shows the exact text and folder first) or **Run and report** (commands run straight away and are shown in the chat and Activity log). In both modes:
 
 - risky commands (`sudo`, `rm -r`, `curl … | sh`, disk tools, `git push`, shutdown…) need a red double confirmation;
-- commands start in an approved folder; other folders ask with a warning;
+- in a folder pai created itself (e.g. a project it scaffolded), normal commands run without asking;
+- with *Allow all folders* off, folders outside your approved ones ask with a warning;
 - pai's own data/code, `.env`, `~/.ssh`/`~/.aws` and the keychain are refused;
-- API keys are removed from the command environment; 60 s time limit; Stop/off switch kills the command and anything it started.
+- API keys are removed from the command environment; 60 s time limit (installs and scaffolding such as `npm install` or `create-next-app` get 5 minutes); Stop/off switch kills the command and anything it started.
+
+Commands that keep running (dev servers, watchers) go through `start_server` instead, which runs them in the background. See below.
+
+## Coding assistant
+
+Ask in the chat, for example: “Build a landing page for a coffee shop in ~/Projects/bean-there and show it to me.” pai then:
+
+1. looks at the project (`find_files`, `search_code`, `read_file`), or scaffolds a new one into an empty folder (`create-next-app … --yes`, Vite…) and copies your images into `public/`;
+2. writes the real pages, changing files with exact-text edits (`edit_file`), shown as a diff;
+3. installs dependencies and starts the dev server with `start_server`: it finds the local address and opens it in the **preview window**, a small browser beside the chat (local addresses only, in its own sandboxed session, with back, reload, an error count and devtools);
+4. checks its work with `open_preview` (page text and console errors) and `server_output` (build errors), and fixes what fails;
+5. ends with a summary: the files it changed, how it checked them, and the preview address.
+
+The project folder it creates becomes pai's own, so its later reads, edits and commands there don't ask each time. You can type while it works (“use the other picture”), and Stop ends it at any point. Dev servers stop when pai quits or is switched off.
 
 ## Complete my text (other apps)
 
@@ -283,6 +312,9 @@ The text helper for *Complete my text* is unpacked next to the app archive (`app
 - Notifications from an unsigned dev build may need to be allowed for "Electron" in System Settings → Notifications.
 - Complete my text works on macOS and Windows (not Linux yet). Some text boxes don't share their text (Google Docs, some web editors, Chrome/Edge on Windows), so it can't help there.
 - Voice input is English-first; the Whisper `base` model is a balance of speed and accuracy.
+- The preview window only opens local addresses (`localhost`).
+- Quiz answers aren't saved: reopening a chat starts its quiz over.
+- The installer isn't code-signed yet, so macOS asks users to confirm the first launch.
 
 ## Roadmap
 
@@ -297,6 +329,9 @@ The text helper for *Complete my text* is unpacked next to the app archive (`app
 - [x] 8. Skills as files
 - [x] 9. "Generate your AI" setup
 - [x] 10. Proactive features
+- [x] 11. Coding assistant, dev servers and the preview window
+- [x] 12. Pictures, interactive quizzes, automatic memory
+- [x] 13. Paste your API key in the app; installers
 
 ## License
 
