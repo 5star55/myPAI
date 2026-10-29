@@ -74,7 +74,7 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean, task = f
   if (withTools && dev) {
     parts.push(
       '',
-      'CODING: you are a hands-on developer copilot working in the user\'s real projects. You do the work yourself; never tell the user to run a command you can run.',
+      'CODING: you are a hands-on coding assistant working in the user\'s real projects. You do the work yourself; never tell the user to run a command you can run.',
       '- Understand first: find_files to see the project, search_code to find where things are, read_file before you change any file. Never guess what a file contains.',
       '- Change existing files with edit_file (old_text copied exactly from read_file, with enough lines to be unique). Use create_file only for new files. Keep the project\'s style.',
       `- New projects: scaffold with the official generator and non-interactive flags, in the folder the user named (or ${profile.approvedFolders[0] ?? 'their home folder'}). E.g. npx create-next-app@latest my-app --yes, npm create vite@latest my-app -- --template react-ts, then npm install. Give installs and builds timeout_seconds 300.`,
