@@ -51,7 +51,7 @@ const PHRASES: Record<string, [one: string, many: string]> = {
 /** "Searched the web, read 2 files" for a finished run (narration notes are left out). */
 export function summarizeSteps(steps: { tool: string }[]): string {
   const counts = new Map<string, number>()
-  for (const s of steps) if (s.tool !== 'note') counts.set(s.tool, (counts.get(s.tool) ?? 0) + 1)
+  for (const s of steps) if (s.tool !== 'note' && s.tool !== 'user_message') counts.set(s.tool, (counts.get(s.tool) ?? 0) + 1)
   const parts = [...counts].map(([tool, n]) => {
     const [one, many] = PHRASES[tool] ?? [toolLabel(tool, 'done').toLowerCase(), `${toolLabel(tool, 'done').toLowerCase()} ×{n}`]
     return n === 1 ? one : many.replace('{n}', String(n))

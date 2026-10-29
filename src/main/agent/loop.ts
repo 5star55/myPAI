@@ -72,10 +72,24 @@ export interface RunHooks {
   context?: string
   /** Offer tools even if the message doesn't look like an action (Ecospace tasks). */
   forceTools?: boolean
+  /** Messages the user sent while this run works; taken between steps (chat only). */
+  takeInbox?: () => string[]
 }
 
 /** The chat's reply in progress (only one at a time). */
 let chatRun: AbortController | null = null
+/** What the user sent while the chat reply was still being worked on. */
+let chatInbox: string[] = []
+
+/**
+ * A message sent while a reply is running: it is read at the next step. false = nothing is
+ * running (anymore), so the UI sends it as a normal message instead.
+ */
+export function steerChat(text: unknown): boolean {
+  if (!chatRun || typeof text !== 'string' || !text.trim()) return false
+  chatInbox.push(text.trim().slice(0, CHAT_LIMITS.maxMessageChars))
+  return true
+}
 
 /** Stop the chat reply in progress (Stop button / off switch). */
 export function cancelRun(): void {
@@ -236,7 +250,7 @@ export async function runChat(input: unknown): Promise<Result<ChatReply>> {
     // Lasting facts in the message ("I'm 19") are saved alongside the reply, without being asked.
     const last = history.value[history.value.length - 1].content
     const remembering = profileStore.get().permissions.memory && mightHoldFact(last) ? proposeMemory(history.value, controller.signal) : null
-    const res = await runAgent(history.value, controller.signal, { emit: (e) => broadcast('agent:event', e) })
+    const res = await runAgent(history.value, controller.signal, { emit: (e) => broadcast('agent:event', e), takeInbox: () => chatInbox.splice(0) })
     if (!res.ok || !remembering) return res
     // If the assistant saved it itself (save_memory), only drop what's out of date: adding would repeat it.
     const proposal = await remembering
@@ -255,6 +269,7 @@ export async function runChat(input: unknown): Promise<Result<ChatReply>> {
     return { ok: true, value: { ...res.value, steps: [...res.value.steps, step] } }
   } finally {
     chatRun = null
+    chatInbox = [] // not taken in time: the UI sends those as the next message
   }
 }
 
@@ -325,6 +340,15 @@ async function lookAtPictures(history: ChatTurn[], signal: AbortSignal, hooks: R
   return { ok: true, value: { turns, step } }
 }
 
+/** A call's name and arguments, the same however the model spaced its JSON. */
+function callSignature(call: ToolCall): string {
+  try {
+    return `${call.name}:${JSON.stringify(JSON.parse(call.arguments || '{}'))}`
+  } catch {
+    return `${call.name}:${call.arguments}`
+  }
+}
+
 /** Model -> tools -> model ... -> answer. Used by the chat and by Ecospace tasks. */
 export async function runAgent(input: ChatTurn[], signal: AbortSignal, hooks: RunHooks): Promise<Result<ChatReply>> {
   const profile = profileStore.get()
@@ -359,12 +383,21 @@ export async function runAgent(input: ChatTurn[], signal: AbortSignal, hooks: Ru
     ...fitHistory(history, budget - estimateTokens(system)).map((t): ChatMessage => ({ role: t.role, content: t.content }))
   ]
   const steps: ToolStep[] = looked.value.step ? [looked.value.step] : []
+  /** Calls that failed in this reply (by name + arguments), with their error. */
+  const failedCalls = new Map<string, string>()
   const firstStep = steps.length
   let nudged = false
   const maxRounds = () => (isDev() ? MAX_DEV_ROUNDS : MAX_ROUNDS)
 
   for (let round = 0; round < maxRounds(); round++) {
     if (round > 0) hooks.emit({ kind: 'text-reset' })
+    // Messages sent while working: shown where they were read, and taken into account from now on.
+    for (const text of hooks.takeInbox?.() ?? []) {
+      messages.push({ role: 'user', content: `(Sent by the user while you were working. Take it into account from now on.)\n${text}` })
+      const step: ToolStep = { tool: 'user_message', target: '', status: 'ok', summary: text }
+      steps.push(step)
+      hooks.emit({ kind: 'tool-end', step })
+    }
     if (totalTokens(messages) > budget) shrinkToolOutputs(messages, budget)
     const res = await complete({
       size: useTools ? 'big' : 'small',
@@ -436,8 +469,16 @@ export async function runAgent(input: ChatTurn[], signal: AbortSignal, hooks: Ru
     })
     // Run tool calls one at a time so each permission dialog is clear.
     for (const call of toolCalls) {
+      // The exact same call failed already in this reply: say so instead of failing again (models loop on this).
+      const signature = callSignature(call)
+      const earlier = failedCalls.get(signature)
+      if (earlier) {
+        messages.push({ role: 'tool', tool_call_id: call.id, content: `Not run: you already tried exactly this and it failed: ${earlier}\nDo something different (use the names the error suggests, or look first with list_files).` })
+        continue
+      }
       const { step, output } = await executeCall(call, signal, hooks)
       steps.push(step)
+      if (step.status === 'error' || step.status === 'blocked') failedCalls.set(signature, step.summary)
       messages.push({ role: 'tool', tool_call_id: call.id, content: output })
       if (signal.aborted) return { ok: false, error: 'Stopped.' }
     }

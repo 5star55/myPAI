@@ -36,6 +36,7 @@ export function defaultProfile(): Profile {
     userName: '',
     tone: 'friendly',
     approvedFolders: [],
+    folderAccess: 'all',
     permissions: { ...DEFAULT_PERMISSIONS },
     enabledSkills: [...DEFAULT_ON_SKILLS],
     defaultSkillsApplied: [...DEFAULT_ON_SKILLS],
@@ -84,6 +85,7 @@ export function sanitizeProfile(raw: unknown): Profile {
           .filter((f) => isAbsolute(f))
       )
     ],
+    folderAccess: raw.folderAccess === 'approved' ? 'approved' : 'all',
     permissions: Object.fromEntries(
       PERMISSION_KEYS.map((k) => [k, typeof perms[k] === 'boolean' ? perms[k] : d.permissions[k]])
     ) as Record<PermissionKey, boolean>,

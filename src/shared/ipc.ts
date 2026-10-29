@@ -109,6 +109,11 @@ export interface Profile {
   tone: Tone
   /** Absolute folder paths the assistant may touch. Enforced in code. */
   approvedFolders: string[]
+  /**
+   * 'all' (default): any folder except protected ones (system, keys, pai's own files), with no
+   * "outside" warning; every action still asks. 'approved': only approvedFolders, others warn first.
+   */
+  folderAccess: 'all' | 'approved'
   permissions: Record<PermissionKey, boolean>
   enabledSkills: string[]
   /** Built-in skills that were switched on by default once (so switching one off sticks). */
@@ -421,6 +426,7 @@ export const IPC = {
   getConfig: 'config:get',
   chatSend: 'chat:send',
   chatCancel: 'chat:cancel',
+  chatSteer: 'chat:steer',
   permissionRespond: 'permission:respond',
   stateGet: 'state:get',
   stateSetEnabled: 'state:set-enabled',
@@ -483,6 +489,8 @@ export const IPC = {
   composeCancel: 'compose:cancel',
   composeAction: 'compose:action',
   composeAccess: 'compose:access',
+  workspacesList: 'workspaces:list',
+  workspacesRemove: 'workspaces:remove',
   apiKeySave: 'api-key:save',
   apiKeyRemove: 'api-key:remove',
   previewOpen: 'preview:open',
@@ -567,6 +575,8 @@ export interface PaiApi {
   /** Send the conversation so far; the last turn must be the user's new message. */
   sendChat(history: ChatTurn[]): Promise<Result<ChatReply>>
   cancelChat(): Promise<Result<void>>
+  /** Send a message while a reply is running: read at its next step. false = nothing is running. */
+  steerChat(text: string): Promise<Result<boolean>>
   respondPermission(res: PermissionResponse): Promise<Result<void>>
 
   getState(): Promise<Result<AppState>>
@@ -579,6 +589,9 @@ export interface PaiApi {
   /** "Always allow" approvals, as "tool|folder" keys. */
   listApprovals(): Promise<Result<string[]>>
   removeApproval(key: string): Promise<Result<string[]>>
+  /** Folders pai created itself (edits there don't ask), and forgetting one. */
+  listWorkspaces(): Promise<Result<string[]>>
+  removeWorkspace(folder: string): Promise<Result<string[]>>
 
   listActivity(): Promise<Result<ActivityEntry[]>>
   clearActivity(): Promise<Result<void>>

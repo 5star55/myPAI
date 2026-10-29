@@ -53,8 +53,18 @@ function loadHistoryOpen(): boolean {
 }
 
 /** What the model gets: everything except stopped/failed requests. */
-const forModel = (history: Message[]): ChatTurn[] =>
-  history.filter((m) => !m.failed).map(({ role, content, images }) => (images?.length ? { role, content, images } : { role, content }))
+/**
+ * What the model gets: everything except stopped/failed requests. Messages sent while a reply
+ * was running (kept as steps of that reply) are added to the request they belonged to.
+ */
+const forModel = (history: Message[]): ChatTurn[] => {
+  const kept = history.filter((m) => !m.failed)
+  return kept.map(({ role, content, images }, i) => {
+    const added = kept[i + 1]?.role === 'assistant' ? (kept[i + 1].steps ?? []).filter((s) => s.tool === 'user_message').map((s) => s.summary) : []
+    const text = role === 'user' && added.length ? `${content}\n\n(Added while you were working:)\n${added.join('\n')}` : content
+    return images?.length ? { role, content: text, images } : { role, content: text }
+  })
+}
 
 /** "just now", "5 minutes ago", "11 hours ago", "3 days ago". */
 function timeAgo(iso: string | undefined): string {
@@ -92,6 +102,11 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  /** Sent while a reply was running and not read by it yet. Whatever is left when it ends is sent next. */
+  const [queued, setQueued] = useState<string[]>([])
+  const queuedRef = useRef<string[]>([])
+  queuedRef.current = queued
+  const [sendNext, setSendNext] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [live, setLive] = useState<{ tool: string; target: string } | null>(null)
   const [liveSteps, setLiveSteps] = useState<ToolStep[]>([])
@@ -164,8 +179,24 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     } else {
       setLive(null)
       setLiveSteps((s) => [...s, e.step])
+      // A queued message was read by the running reply.
+      if (e.step.tool === 'user_message') {
+        setQueued((q) => {
+          const i = q.indexOf(e.step.summary)
+          return i < 0 ? q : [...q.slice(0, i), ...q.slice(i + 1)]
+        })
+      }
     }
   })
+
+  // What the reply didn't get to read is sent as the next message, once it has finished.
+  useEffect(() => {
+    if (busy || sendNext === null) return
+    const text = sendNext
+    setSendNext(null)
+    void send(text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, sendNext])
 
   // Live suggestions for what you are typing (or, while recording, saying).
   const suggestFor = draft
@@ -299,6 +330,12 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     setLiveText('')
     stopSpeaking()
     const res = await window.pai.sendChat(forModel(history))
+    const leftover = queuedRef.current
+    if (leftover.length) {
+      setQueued([])
+      if (res.ok) setSendNext(leftover.join('\n\n'))
+      else setDraft((d) => [d, ...leftover].filter(Boolean).join('\n')) // stopped or failed: back in the box, not lost
+    }
     busyRef.current = false
     setBusy(false)
     setLive(null)
@@ -483,10 +520,25 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
     inputRef.current?.focus()
   }
 
-  /** The composer's submit: the typed text plus any pictures. */
+  /** The composer's submit: the typed text plus any pictures. While a reply runs, the text is queued for it. */
   function submit() {
     if (voice.state === 'recording') void stopRecording(true)
+    else if (busyRef.current) void steer()
     else void send(draft, attachments)
+  }
+
+  /** Send a message to the reply that is still running (read at its next step). */
+  async function steer() {
+    const text = draft.trim()
+    if (!text || text.length > CHAT_LIMITS.maxMessageChars) return
+    setDraft('')
+    setQueued((q) => [...q, text])
+    const res = await window.pai.steerChat(text)
+    // It finished in the meantime: send it as the next message instead.
+    if (!res.ok || !res.value) {
+      setQueued((q) => q.filter((t) => t !== text))
+      setSendNext(text)
+    }
   }
 
   /** Send the last failed request again. */
@@ -702,6 +754,12 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
                   <RichText text={liveText} />
                 </div>
               )}
+              {queued.map((q, i) => (
+                <div key={i} className="act-user act-queued" title="Read at the next step">
+                  <span>{q}</span>
+                  <span className="act-user-note">waiting · read at the next step</span>
+                </div>
+              ))}
               <WorkingLine since={busySince} onStop={() => window.pai.cancelChat()} label={live ? toolLabel(live.tool, 'doing') : undefined} />
             </div>
           </div>
@@ -845,7 +903,13 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
             void attach(pics)
           }}
           placeholder={
-            !enabled ? `${assistantName} is off` : voice.state === 'recording' ? 'Listening… your words will appear here' : `Message ${assistantName}…`
+            !enabled
+              ? `${assistantName} is off`
+              : voice.state === 'recording'
+                ? 'Listening… your words will appear here'
+                : busy
+                  ? `Add to it while ${assistantName} works…`
+                  : `Message ${assistantName}…`
           }
           disabled={!enabled}
           rows={1}
@@ -869,6 +933,13 @@ export function Chat({ assistantName, enabled }: { assistantName: string; enable
             )}
           </svg>
         </button>
+        {busy && draft.trim() && (
+          <button className="send" type="submit" aria-label="Send while it works" title="Send now: it is read at the next step">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+              <path d="M4 12h13M12 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
         {busy ? (
           <button className="send send-stop" type="button" onClick={() => window.pai.cancelChat()} aria-label="Stop">
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>

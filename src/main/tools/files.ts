@@ -7,9 +7,20 @@ import { mkdir, open, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join } from 'node:path'
 import { shell } from 'electron'
 import { checkPath, isInside, realPath } from '../security/allowlist'
+import { addWorkspace, inWorkspace } from '../store/workspaces'
 import { ToolInputError, needString, optBool, outsideOf, type Tool } from './types'
 
 const MAX_LIST = 200
+
+/** Every path is inside a folder pai created itself (see store/workspaces.ts). */
+const ownWork = (...paths: string[]): boolean => paths.every(inWorkspace)
+
+/** The topmost folder that `mkdir -p folder` would create, or null if it already exists. */
+function firstMissingFolder(folder: string): string | null {
+  let missing: string | null = null
+  for (let p = folder; !existsSync(p) && dirname(p) !== p; p = dirname(p)) missing = p
+  return missing
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -41,6 +52,7 @@ export const listFiles: Tool = {
     if (!(await stat(check.path)).isDirectory()) return { error: `"${check.path}" is not a folder.` }
     return {
       action: 'List the files in a folder',
+      autoApprove: ownWork(check.path), // looking around a project pai created never asks
       target: check.path,
       folder: check.folder ?? undefined,
       outsideFolders: outsideOf(check),
@@ -95,7 +107,8 @@ export const moveFile: Tool = {
       action: exists ? 'Move a file and OVERWRITE the existing one (old one goes to Trash)' : 'Move a file',
       target: `${src.path}  →  ${target}`,
       destructive: exists,
-      alsoNeeds: exists ? ['files_delete'] : undefined,
+      alsoNeeds: exists && !ownWork(src.path, target) ? ['files_delete'] : undefined,
+      autoApprove: ownWork(src.path, target),
       folder: src.folder ?? undefined,
       outsideFolders: outsideOf(src, dest),
       run: async () => {
@@ -137,7 +150,8 @@ export const renameFile: Tool = {
       action: exists ? 'Rename a file and OVERWRITE the existing one (old one goes to Trash)' : 'Rename a file',
       target: `${src.path}  →  ${basename(target)}`,
       destructive: exists,
-      alsoNeeds: exists ? ['files_delete'] : undefined,
+      alsoNeeds: exists && !ownWork(src.path) ? ['files_delete'] : undefined,
+      autoApprove: ownWork(src.path),
       folder: src.folder ?? undefined,
       outsideFolders: outsideOf(src),
       run: async () => {
@@ -274,14 +288,18 @@ export const createFile: Tool = {
     const lines = content ? content.split('\n').length : 0
     return {
       action: exists ? 'REPLACE a file (old one goes to Trash)' : 'Create a file',
+      // In a project pai created, writing its files is part of the job (old versions still go to the Trash).
+      autoApprove: ownWork(check.path),
       target: check.path,
       preview: firstLines(content, 12) || '(empty file)',
       destructive: exists,
-      alsoNeeds: exists ? ['files_delete'] : undefined,
+      alsoNeeds: exists && !ownWork(check.path) ? ['files_delete'] : undefined,
       folder: check.folder ?? undefined,
       outsideFolders: outsideOf(check),
       run: async () => {
+        const made = firstMissingFolder(dirname(check.path))
         await mkdir(dirname(check.path), { recursive: true })
+        if (made) addWorkspace(made) // a new folder for this file: pai's own work from now on
         if (exists) await shell.trashItem(check.path)
         await writeFile(check.path, content, 'utf8')
         return { text: `Created ${check.path} (${lines} line${lines === 1 ? '' : 's'}).`, output: firstLines(content) }
@@ -305,11 +323,14 @@ export const createFolder: Tool = {
     if (existsSync(check.path)) return { error: `"${check.path}" already exists.` }
     return {
       action: 'Create a folder',
+      autoApprove: ownWork(check.path),
       target: check.path,
       folder: check.folder ?? undefined,
       outsideFolders: outsideOf(check),
       run: async () => {
+        const made = firstMissingFolder(check.path)
         await mkdir(check.path, { recursive: true })
+        if (made) addWorkspace(made)
         return `Created folder ${check.path}.`
       }
     }
@@ -337,6 +358,7 @@ export const readFile: Tool = {
     if (!s.isFile()) return { error: `"${check.path}" is not a file.` }
     return {
       action: 'Read a file',
+      autoApprove: ownWork(check.path),
       target: check.path,
       folder: check.folder ?? undefined,
       outsideFolders: outsideOf(check),

@@ -49,9 +49,25 @@ export function FoldersField({ profile, set }: { profile: Profile; set: Patch })
       set({ approvedFolders: [...profile.approvedFolders, res.value] })
     }
   }
+  const all = profile.folderAccess === 'all'
   return (
     <div className="fields">
-      <p className="hint">The assistant can only touch files inside these folders. This is enforced in code, not just asked nicely.</p>
+      <div className="toggle-row">
+        <div>
+          <strong>Allow all folders</strong>
+          <p className="hint">
+            {all
+              ? 'Work with files anywhere on this computer. Every change still asks you first, and system folders, keys and pai’s own files are always off-limits.'
+              : 'Off: only the folders below. Anything else asks with an extra warning.'}
+          </p>
+        </div>
+        <Toggle on={all} onChange={(on) => set({ folderAccess: on ? 'all' : 'approved' })} label="Allow all folders" />
+      </div>
+      <p className="hint">
+        {all
+          ? 'Favorite folders: suggested while you type, and where new things go when you don’t say.'
+          : 'The assistant can only touch files inside these folders. This is enforced in code, not just asked nicely.'}
+      </p>
       <ul className="folder-list">
         {profile.approvedFolders.map((f) => (
           <li key={f} className="folder glass">
@@ -61,7 +77,9 @@ export function FoldersField({ profile, set }: { profile: Profile; set: Patch })
             </button>
           </li>
         ))}
-        {profile.approvedFolders.length === 0 && <li className="empty">No folders yet. File tools will refuse everything.</li>}
+        {profile.approvedFolders.length === 0 && (
+          <li className="empty">{all ? 'None yet (optional).' : 'No folders yet. File tools will refuse everything.'}</li>
+        )}
       </ul>
       <button type="button" className="btn-ghost" onClick={add}>
         + Add folder…

@@ -20,6 +20,14 @@ const STATUS_NOTE: Record<ToolStep['status'], string> = { ok: '', denied: 'Denie
 /** One finished step. A "note" is what the assistant said between steps. */
 export function StepRow({ step }: { step: ToolStep }) {
   const [open, setOpen] = useState(false)
+  if (step.tool === 'user_message') {
+    return (
+      <div className="act-user">
+        <span>{step.summary}</span>
+        <span className="act-user-note">sent while working</span>
+      </div>
+    )
+  }
   if (step.tool === 'note') {
     return (
       <div className="act-say">

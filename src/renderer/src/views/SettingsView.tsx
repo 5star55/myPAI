@@ -58,6 +58,7 @@ export function SettingsView({ profile: saved, state, config, onSaved, onConfig 
   const [profile, setProfile] = useState(saved)
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [approvals, setApprovals] = useState<string[]>([])
+  const [workspaces, setWorkspaces] = useState<string[]>([])
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }))
   const dirty = JSON.stringify(profile) !== JSON.stringify(saved)
@@ -67,6 +68,7 @@ export function SettingsView({ profile: saved, state, config, onSaved, onConfig 
   useEffect(() => {
     window.pai.listSkills().then((r) => r.ok && setSkills(r.value))
     window.pai.listApprovals().then((r) => r.ok && setApprovals(r.value))
+    window.pai.listWorkspaces().then((r) => r.ok && setWorkspaces(r.value))
   }, [])
 
   function go(s: Section) {
@@ -191,9 +193,38 @@ export function SettingsView({ profile: saved, state, config, onSaved, onConfig 
         {section === 'writing' && <WritingSection profile={profile} set={set} config={config} name={name} />}
 
         {section === 'folders' && (
-          <Page title="Folders" sub={`Where ${name} may work with files. Anything else asks with a warning first.`}>
-            <Card title="Approved folders">
+          <Page
+            title="Folders"
+            sub={profile.folderAccess === 'all' ? `${name} may work in any folder; every change still asks you first.` : `Where ${name} may work with files. Anything else asks with a warning first.`}
+          >
+            <Card title={profile.folderAccess === 'all' ? 'Folder access' : 'Approved folders'}>
               <FoldersField profile={profile} set={set} />
+            </Card>
+            <Card title="Made by pai">
+              <p className="hint">
+                Projects and folders {name} created itself. Creating and editing files and normal commands there don’t ask each time; deleting and risky
+                commands still do.
+              </p>
+              {workspaces.length === 0 ? (
+                <p className="empty">None yet.</p>
+              ) : (
+                <ul className="folder-list">
+                  {workspaces.map((w) => (
+                    <li key={w} className="folder glass">
+                      <code>{w}</code>
+                      <button
+                        className="btn-ghost danger"
+                        onClick={async () => {
+                          const r = await window.pai.removeWorkspace(w)
+                          if (r.ok) setWorkspaces(r.value)
+                        }}
+                      >
+                        Ask again
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
             <Card title="Always-allowed actions">
               {approvals.length === 0 ? (

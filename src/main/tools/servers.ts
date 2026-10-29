@@ -15,6 +15,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { checkPath } from '../security/allowlist'
+import { inWorkspace } from '../store/workspaces'
 import { profileStore } from '../store/profile'
 import { inspectPreview, localUrl, openPreview } from '../windows/previewWindow'
 import { CommandError, cleanEnv, killTree, riskOf, shellFor, touchesProtected } from './shell'
@@ -132,7 +133,7 @@ export const startServer: Tool = {
       folder: check.folder ?? undefined,
       outsideFolders: outside,
       neverRemember: true,
-      autoApprove: profile.commandMode === 'auto' && !risk && !outside,
+      autoApprove: (profile.commandMode === 'auto' || inWorkspace(check.path)) && !risk && !outside,
       run: async (signal) => {
         const server = startProcess(command, check.path)
         await waitForUrl(server, waitS, signal)

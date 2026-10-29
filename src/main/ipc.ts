@@ -9,7 +9,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron'
 import { IPC, MAX_REVIEW_CHARS, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
-import { cancelRun, runChat } from './agent/loop'
+import { cancelRun, runChat, steerChat } from './agent/loop'
 import { getPublicConfig } from './config'
 import { checkApiKey } from './model'
 import { checkKeyShape, removeApiKey, saveApiKey } from './store/apiKey'
@@ -21,6 +21,7 @@ import { synthesize, warmUpTts } from './tts'
 import { getSuggestions, resetSuggestIndex } from './suggest'
 import { clearActivity, listActivity } from './store/activity'
 import { listAlways, removeAlways } from './store/approvals'
+import { listWorkspaces, removeWorkspace } from './store/workspaces'
 import { addMemory, deleteMemory, listMemory, updateMemory } from './store/memory'
 import { deleteConversation, getConversation, listConversations, renameConversation, saveConversation } from './store/conversations'
 import { profileStore, sanitizeProfile } from './store/profile'
@@ -136,6 +137,7 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   // Chat
   handle(IPC.chatSend, 'chat', (history) => runChat(history))
   handle(IPC.chatCancel, 'chat', () => ok(cancelRun()))
+  handle(IPC.chatSteer, 'chat', (text) => ok(steerChat(text)))
   handle(IPC.permissionRespond, 'chat', (res) => ok(respondPermission(res)))
 
   // State
@@ -311,6 +313,12 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.floatMenu, 'float', () => ok(showFloatMenu(menu)))
 
   // The model API key: pasted in Settings / setup, checked with the server, stored encrypted in the data folder.
+  handle(IPC.workspacesList, 'chat', () => ok(listWorkspaces()))
+  handle(IPC.workspacesRemove, 'chat', (folder) => {
+    if (typeof folder !== 'string') return { ok: false, error: 'Bad folder.' }
+    removeWorkspace(folder)
+    return ok(listWorkspaces())
+  })
   handle(IPC.apiKeySave, 'chat', async (raw) => {
     const key = typeof raw === 'string' ? raw.trim() : ''
     const problem = checkKeyShape(key)

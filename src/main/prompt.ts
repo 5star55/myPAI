@@ -57,9 +57,14 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean, task = f
       '- web_search is only for current or very specific facts (news, prices, weather, recent releases). After searching, answer with the facts in your own words; the user sees the sources.',
       '- Call tools only through the tool-calling interface, never as JSON or text in your reply.',
       '- Files: use full paths (~/Downloads/a.txt). Only use files the user named or that you saw in a listing; if unsure of a name, list the folder first.',
-      `- Approved folders: ${profile.approvedFolders.length ? profile.approvedFolders.join(', ') : '(none yet)'}. Other folders are possible when the user asks (the app warns them); system folders and secrets are always refused.`,
+      profile.folderAccess === 'all'
+        ? `- You may work in any folder on this computer (the user approves each action). Favorite folders: ${profile.approvedFolders.length ? profile.approvedFolders.join(', ') : '(none)'}. System folders, keys and pai's own files are always refused.`
+        : `- Approved folders: ${profile.approvedFolders.length ? profile.approvedFolders.join(', ') : '(none yet)'}. Other folders are possible when the user asks (the app warns them); system folders and secrets are always refused.`,
       `- Commands: non-interactive shell; nothing that waits for input, opens an editor or needs sudo. Python is "${python}" (never "${python === 'python3' ? 'python' : 'python3'}"); to RUN more than one line, save it to a file and run that.`,
       '- Searches, memory and reminders run straight away. Other actions ask the user first; if one is denied, accept it and do not retry.',
+      '- Do every step yourself with your tools: moving, copying, creating, installing, running. Never ask the user to do something you can do; ask only for information you cannot find yourself.',
+      '- Write paths plainly, spaces included: ~/Desktop/brand images/a.png (no quotes, no backslashes). Never invent a folder name: if a path does not exist, use the names the error lists, or list the parent folder.',
+      `- To copy files use run_command (${process.platform === 'win32' ? 'Copy-Item -Recurse' : 'cp -R'}); move_file moves them. Copy the user's own files rather than moving them unless they asked to move.`,
       '- When the user shares a lasting personal fact or preference, save it with save_memory. Use recall_memory when their preferences or past details would help.',
       '- If a step fails, read the error and try one sensible fix, then explain plainly.',
       task
@@ -78,6 +83,8 @@ export function buildSystemPrompt(profile: Profile, withTools: boolean, task = f
       '- Understand first: find_files to see the project, search_code to find where things are, read_file before you change any file. Never guess what a file contains.',
       '- Change existing files with edit_file (old_text copied exactly from read_file, with enough lines to be unique). Use create_file only for new files. Keep the project\'s style.',
       `- New projects: scaffold with the official generator and non-interactive flags, in the folder the user named (or ${profile.approvedFolders[0] ?? 'their home folder'}). E.g. npx create-next-app@latest my-app --yes, npm create vite@latest my-app -- --template react-ts, then npm install. Give installs and builds timeout_seconds 300.`,
+      '- Generators like create-next-app need an EMPTY folder: scaffold into a new subfolder (e.g. "<the user\'s folder>/site"), never into a folder that already has files. Then copy the user\'s images or assets into the new project\'s public/ folder.',
+      '- After scaffolding, build what was asked: replace the starter page with the real pages and sections, using the user\'s assets and content. Never stop at the default template.',
       '- Dev servers and watchers (npm run dev, vite, next dev) keep running: start them ONLY with start_server, never run_command. It opens the app in the preview window the user sees.',
       '- Check your work: after changes, run the build, typecheck or tests with run_command, and use open_preview (page text + console errors) and server_output (compile errors). Fix what fails, then check again.',
       '- Work in small steps and keep going until the job is done. Before each tool call, say in one short line what you are doing and why.',

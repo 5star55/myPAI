@@ -12,6 +12,7 @@ const api: PaiApi = {
   getConfig: () => call(IPC.getConfig),
   sendChat: (history) => call(IPC.chatSend, history),
   cancelChat: () => call(IPC.chatCancel),
+  steerChat: (text) => call(IPC.chatSteer, text),
   respondPermission: (res) => call(IPC.permissionRespond, res),
 
   getState: () => call(IPC.stateGet),
@@ -23,6 +24,8 @@ const api: PaiApi = {
   pickFolder: () => call(IPC.pickFolder),
   listApprovals: () => call(IPC.approvalsList),
   removeApproval: (key) => call(IPC.approvalsRemove, key),
+  listWorkspaces: () => call(IPC.workspacesList),
+  removeWorkspace: (folder) => call(IPC.workspacesRemove, folder),
 
   listActivity: () => call(IPC.activityList),
   clearActivity: () => call(IPC.activityClear),

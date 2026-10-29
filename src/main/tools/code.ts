@@ -11,6 +11,7 @@
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, relative, sep } from 'node:path'
 import { checkPath } from '../security/allowlist'
+import { inWorkspace } from '../store/workspaces'
 import { needString, optBool, optString, outsideOf, type Tool } from './types'
 
 const SKIP_DIRS = new Set([
@@ -84,6 +85,7 @@ export const findFiles: Tool = {
     const pattern = optString(args, 'pattern')
     return {
       action: 'List the files in a project',
+      autoApprove: inWorkspace(check.path),
       target: pattern ? `${check.path} (${pattern})` : check.path,
       folder: check.folder ?? undefined,
       outsideFolders: outsideOf(check),
@@ -128,6 +130,7 @@ export const searchCode: Tool = {
     const filePattern = optString(args, 'file_pattern')
     return {
       action: 'Search a project',
+      autoApprove: inWorkspace(check.path),
       target: `“${query}” in ${check.path}`,
       folder: check.folder ?? undefined,
       outsideFolders: outsideOf(check),
@@ -208,6 +211,7 @@ export const editFile: Tool = {
     const diff = diffPreview(oldText, newText)
     return {
       action: 'Edit a file',
+      autoApprove: inWorkspace(check.path), // a project pai created: part of the job
       target: check.path,
       preview: diff,
       folder: check.folder ?? undefined,

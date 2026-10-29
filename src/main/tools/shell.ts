@@ -13,17 +13,21 @@
  * together with anything they started when you press Stop or the off switch.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { app } from 'electron'
 import { dataDir } from '../paths'
 import { checkPath } from '../security/allowlist'
+import { addWorkspace, inWorkspace } from '../store/workspaces'
 import { profileStore } from '../store/profile'
 import { needString, outsideOf, type Tool, type ToolOutput } from './types'
 
 const DEFAULT_TIMEOUT_S = 60
 const MAX_TIMEOUT_S = 300
 const MAX_OUTPUT = 50_000
+/** Package installs and scaffolding (create-next-app, npm install, pip install…). */
+const SLOW_COMMAND = /\b(create-[\w-]+|npm\s+(i|install|ci|create|init)|npx\s+(--yes\s+)?create|yarn(\s+(install|add|create))?\s*($|&&|;)|pnpm\s+(i|install|add|create|dlx)|bun\s+(i|install|create)|pip3?\s+install|poetry\s+install|cargo\s+build|brew\s+install|composer\s+install)/i
 
 /** Commands that can do serious damage or reach beyond the computer. */
 const RISKY: { re: RegExp; why: string }[] = [
@@ -42,6 +46,12 @@ const RISKY: { re: RegExp; why: string }[] = [
   { re: /\bosascript\b/, why: 'can control other apps' },
   { re: /\b(Remove-Item|rd|rmdir|del)\b.*(-Recurse|\/s)/i, why: 'deletes folders permanently' }
 ]
+
+/** Seconds a command may run: installs and project generators routinely take minutes, so they always get the full time. */
+export function commandTimeout(command: string, requested: unknown): number {
+  const floor = SLOW_COMMAND.test(command) ? MAX_TIMEOUT_S : 1
+  return Math.min(MAX_TIMEOUT_S, Math.max(floor, Number(requested) || DEFAULT_TIMEOUT_S))
+}
 
 export function riskOf(command: string): string | null {
   for (const r of RISKY) if (r.re.test(command)) return r.why
@@ -70,6 +80,15 @@ export function cleanEnv(): NodeJS.ProcessEnv {
     env[k] = v
   }
   return env
+}
+
+/** The folder names directly inside `dir`. */
+function foldersIn(dir: string): Set<string> {
+  try {
+    return new Set(readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name))
+  } catch {
+    return new Set()
+  }
 }
 
 export function shellFor(): [string, string[]] {
@@ -174,7 +193,7 @@ export const runCommand: Tool = {
     const check = checkPath(cwdInput, { mustExist: true, isFolder: true })
     if (!check.ok) return { error: check.error }
     if (!statSync(check.path).isDirectory()) return { error: `"${check.path}" is not a folder.` }
-    const timeoutS = Math.min(MAX_TIMEOUT_S, Math.max(1, Number(args.timeout_seconds) || DEFAULT_TIMEOUT_S))
+    const timeoutS = commandTimeout(command, args.timeout_seconds)
 
     const risk = riskOf(command)
     const outside = outsideOf(check)
@@ -186,10 +205,15 @@ export const runCommand: Tool = {
       folder: check.folder ?? undefined,
       outsideFolders: outside,
       neverRemember: true,
-      // "Run and report": only normal commands inside approved folders skip the dialog.
-      autoApprove: profile.commandMode === 'auto' && !risk && !outside,
+      // "Run and report", or a project pai created: normal commands skip the dialog (risky ones never do).
+      autoApprove: (profile.commandMode === 'auto' || inWorkspace(check.path)) && !risk && !outside,
       run: async (signal): Promise<ToolOutput> => {
-        const { code, output } = await runShell(command, check.path, timeoutS, signal)
+        const before = foldersIn(check.path)
+        const result = await runShell(command, check.path, timeoutS, signal).finally(() => {
+          // Folders the command made (a scaffolded project…) are pai's own work from now on.
+          for (const f of foldersIn(check.path)) if (!before.has(f)) addWorkspace(join(check.path, f))
+        })
+        const { code, output } = result
         const summary = code === 0 ? 'exit 0' : `exit code ${code}`
         if (code !== 0) throw new CommandError(`The command failed (${summary}).`, output)
         return { text: `$ ${command}\n(in ${check.path}, ${summary})\n${output}`, output }

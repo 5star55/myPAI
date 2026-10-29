@@ -22,6 +22,7 @@ export function makeFiles(files: Record<string, string>): void {
 export function useProfile(folders: string[], overrides: Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>> = {}): void {
   const p = defaultProfile()
   p.approvedFolders = folders.map((f) => join(TMP, f))
+  p.folderAccess = 'approved' // most tests check the strict allowlist; "all folders" has its own tests
   for (const k of PERMISSION_KEYS) p.permissions[k] = true
   Object.assign(p.permissions, overrides)
   profileStore.set(p)
