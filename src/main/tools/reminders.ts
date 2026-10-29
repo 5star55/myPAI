@@ -68,6 +68,8 @@ export const setReminder: Tool = {
     return {
       action: 'Set a reminder',
       target: label,
+      // Local, harmless and easy to delete, so no dialog; the Settings switch still turns it off.
+      autoApprove: true,
       run: async () => {
         addReminder(message, when, repeat)
         scheduleNextReminder()
@@ -86,6 +88,7 @@ export const listRemindersTool: Tool = {
     return {
       action: 'Read your reminders',
       target: 'scheduled reminders',
+      autoApprove: true,
       run: async () => {
         const list = all()
         if (list.length === 0) return 'No reminders are scheduled.'

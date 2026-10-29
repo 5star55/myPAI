@@ -318,11 +318,16 @@ export const createFolder: Tool = {
 
 export const readFile: Tool = {
   name: 'read_file',
-  description: 'Read the text of a file (up to 200 KB). Use this to look inside a file before changing or explaining it.',
+  description:
+    'Read the text of a file (up to 200 KB). Use this to look inside a file before changing or explaining it. For a long file, read part of it with start_line and line_count.',
   permission: 'documents',
   parameters: {
     type: 'object',
-    properties: { path: { type: 'string', description: 'Full path of the file' } },
+    properties: {
+      path: { type: 'string', description: 'Full path of the file' },
+      start_line: { type: 'number', description: 'Optional: first line to read (1 = the start)' },
+      line_count: { type: 'number', description: 'Optional: how many lines to read from start_line' }
+    },
     required: ['path']
   },
   async prepare(args) {
@@ -339,8 +344,17 @@ export const readFile: Tool = {
         const buf = await readFileBytes(check.path)
         if (buf.includes(0)) throw new Error('That looks like a binary file, not text.')
         const text = buf.toString('utf8')
+        const start = Math.max(1, Math.floor(Number(args.start_line) || 1))
+        const count = Math.floor(Number(args.line_count) || 0)
+        if (start > 1 || count > 0) {
+          const lines = text.split('\n')
+          const part = lines.slice(start - 1, count > 0 ? start - 1 + count : undefined)
+          const end = start + part.length - 1
+          return { text: `Lines ${start}-${end} of ${lines.length} in ${check.path}:\n${part.join('\n')}`, output: firstLines(part.join('\n')) }
+        }
         const more = s.size > MAX_READ_BYTES ? `\n…(file is ${formatSize(s.size)}; showing the first ${formatSize(MAX_READ_BYTES)})` : ''
-        return { text: `Contents of ${check.path}:\n${text}${more}`, output: firstLines(text) }
+        const lineCount = text.split('\n').length
+        return { text: `Contents of ${check.path} (${lineCount} lines):\n${text}${more}`, output: firstLines(text) }
       }
     }
   }

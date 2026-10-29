@@ -10,8 +10,10 @@
  * Switches in "General" (on/off, quiet mode) apply instantly. Everything else
  * is edited locally and saved with the Save bar.
  */
-import { useEffect, useState, type ReactNode } from 'react'
-import { VOICE_HOTKEY, type AppState, type Profile, type PublicConfig, type SkillInfo } from '@shared/ipc'
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { DEFAULT_COMPOSE_APPS, hotkeyLabelFor, isValidHotkey } from '@shared/compose'
+import { VOICE_HOTKEY, type AppState, type ComposeAccess, type Profile, type PublicConfig, type SkillInfo } from '@shared/ipc'
+import { ApiKeyField } from '../components/ApiKeyField'
 import { FoldersField, IdentityFields, PermissionsField, SkillsField } from '../components/ProfileFields'
 import { Toggle } from '../components/Toggle'
 import { VoicePicker } from '../components/VoicePicker'
@@ -21,12 +23,15 @@ interface Props {
   state: AppState
   config: PublicConfig | null
   onSaved: (p: Profile) => void
+  onConfig: (c: PublicConfig) => void
 }
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 12h2M18 12h2M12 4v2M12 18v2' },
+  { id: 'model', label: 'AI model', icon: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v-3h2v-2h2l1.1-1.1A4 4 0 0 1 15 7zM16 10h.01' },
   { id: 'personality', label: 'Personality', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20c1.5-4 4.5-6 8-6s6.5 2 8 6' },
   { id: 'voice', label: 'Voice', icon: 'M9 3h6v11H9zM5 11a7 7 0 0 0 14 0M12 18v3' },
+  { id: 'writing', label: 'Writing', icon: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4' },
   { id: 'folders', label: 'Folders', icon: 'M3 6h6l2 2h10v11H3z' },
   { id: 'permissions', label: 'Permissions', icon: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z' },
   { id: 'commands', label: 'Commands', icon: 'M4 17l5-5-5-5M12 19h8' },
@@ -35,6 +40,7 @@ const SECTIONS = [
 type Section = (typeof SECTIONS)[number]['id']
 
 const isMac = navigator.userAgent.includes('Mac')
+
 const hotkeyLabel = isMac ? '⌘⇧Space' : VOICE_HOTKEY.replace('CommandOrControl', 'Ctrl').replace(/\+/g, '+')
 
 function loadSection(): Section {
@@ -47,7 +53,7 @@ function loadSection(): Section {
   return 'general'
 }
 
-export function SettingsView({ profile: saved, state, config, onSaved }: Props) {
+export function SettingsView({ profile: saved, state, config, onSaved, onConfig }: Props) {
   const [section, setSection] = useState<Section>(loadSection)
   const [profile, setProfile] = useState(saved)
   const [skills, setSkills] = useState<SkillInfo[]>([])
@@ -109,25 +115,6 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
                 <Toggle on={profile.proactive} onChange={(on) => set({ proactive: on })} label="Proactive offers" />
               </Row>
             </Card>
-            {config && (
-              <Card title="Model">
-                <Row label="Mode">
-                  <span className={`chip chip-${config.mode}`}>{config.mode === 'mock' ? 'MOCK' : 'LIVE'}</span>
-                </Row>
-                <Row label="Chat model">
-                  <code>{config.smallModel}</code>
-                </Row>
-                <Row label="Tool model">
-                  <code>{config.bigModel}</code>
-                </Row>
-                <Row label="Web search">
-                  <span className={config.webSearchConfigured ? 'ok-text' : 'muted'}>{config.webSearchConfigured ? 'Configured' : 'Not configured'}</span>
-                </Row>
-                <p className="card-foot">
-                  These come from <code>.env</code>. Edit it and restart {name} to change them.
-                </p>
-              </Card>
-            )}
             <NotificationsCard name={name} />
             <Card title="Start over">
               <Row label="Re-run “Generate your AI”" help="Walk through setup again. Memory, chats and logs are kept.">
@@ -142,6 +129,33 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
                 </button>
               </Row>
             </Card>
+          </Page>
+        )}
+
+        {section === 'model' && (
+          <Page title="AI model" sub={`The key ${name} uses to reach its AI (NVIDIA Nemotron on Nebius Token Factory), and which models it uses.`}>
+            <Card title="Nebius API key">
+              <ApiKeyField config={config} onChange={onConfig} />
+            </Card>
+            {config && (
+              <Card title="Models">
+                <Row label="Mode">
+                  <span className={`chip chip-${config.mode}`}>{config.mode === 'mock' ? 'MOCK' : 'LIVE'}</span>
+                </Row>
+                <Row label="Chat model">
+                  <code>{config.smallModel}</code>
+                </Row>
+                <Row label="Tool model">
+                  <code>{config.bigModel}</code>
+                </Row>
+                <Row label="Web search">
+                  <span className={config.webSearchConfigured ? 'ok-text' : 'muted'}>{config.webSearchConfigured ? 'Configured' : 'Not configured'}</span>
+                </Row>
+                <p className="card-foot">
+                  The installed app uses these models on Nebius. When running from source, <code>.env</code> can change them (restart {name} after editing it).
+                </p>
+              </Card>
+            )}
           </Page>
         )}
 
@@ -173,6 +187,8 @@ export function SettingsView({ profile: saved, state, config, onSaved }: Props) 
             </Card>
           </Page>
         )}
+
+        {section === 'writing' && <WritingSection profile={profile} set={set} config={config} name={name} />}
 
         {section === 'folders' && (
           <Page title="Folders" sub={`Where ${name} may work with files. Anything else asks with a warning first.`}>
@@ -309,6 +325,142 @@ function NotificationsCard({ name }: { name: string }) {
       )}
       {result === 'unsupported' && <p className="card-foot">This system doesn't support notifications; reminders will still show on the orb.</p>}
     </Card>
+  )
+}
+
+const isLocalModel = (config: PublicConfig | null) => !config || config.mode === 'mock' || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(config.baseURL)
+
+/** "Complete my text": a shortcut you choose, in other apps. */
+function WritingSection({ profile, set, config, name }: { profile: Profile; set: (p: Partial<Profile>) => void; config: PublicConfig | null; name: string }) {
+  const [access, setAccess] = useState<ComposeAccess | null>(null)
+  const compose = profile.compose
+  const composeKey = hotkeyLabelFor(compose.hotkey, isMac)
+  const setCompose = (patch: Partial<Profile['compose']>) => set({ compose: { ...compose, ...patch } })
+  const check = (prompt = false) => window.pai.composeAccess(prompt).then((r) => r.ok && setAccess(r.value))
+
+  useEffect(() => {
+    void check()
+    // Re-check when you come back from System Settings.
+    const onFocus = () => void check()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  const local = isLocalModel(config)
+  const unavailable = access?.available === false
+  return (
+    <Page title="Writing" sub={`Let ${name} help finish what you're typing in other apps, like an email or a message.`}>
+      <Card>
+        <Row
+          label="Shortcut"
+          help="Press this in a text box to get suggestions. Needs at least one modifier key. Alt+Space is taken by the Windows window menu."
+        >
+          <HotkeyField value={compose.hotkey} mac={isMac} onChange={(accel) => setCompose({ hotkey: accel })} />
+        </Row>
+        <Row
+          label={<>Complete my text: <kbd className="key">{composeKey}</kbd></>}
+          help={
+            unavailable
+              ? isMac
+                ? "The text helper isn't built. Install Xcode's command line tools (xcode-select --install) and restart."
+                : 'The Windows text helper is not built yet. Run npm run build once, then restart.'
+              : `In a text box in an allowed app, press ${composeKey} and pick one of 3 ways to finish your sentence. ${name} reads the text only when you press it.`
+          }
+        >
+          <Toggle on={compose.enabled} onChange={(on) => setCompose({ enabled: on })} label="Complete my text" disabled={unavailable} />
+        </Row>
+        {isMac && access?.available && (
+          <Row
+            label="Accessibility permission"
+            help={access.trusted ? 'Granted. macOS lets pai read and type into the text box you are in.' : `macOS needs this to let ${name} read the text box you're typing in. Turn on pai (or "Electron" when running from source, or the terminal you started it from).`}
+          >
+            {access.trusted ? <span className="ok-text">✓ Granted</span> : <button className="btn-ghost" onClick={() => check(true)}>Grant access…</button>}
+          </Row>
+        )}
+      </Card>
+
+      <Card title="Allowed apps">
+        {compose.apps.length === 0 ? (
+          <p className="empty">None. Press {composeKey} in an app to allow it from there.</p>
+        ) : (
+          <div className="compose-apps">
+            {compose.apps.map((a) => (
+              <span key={a.id} className="chip-suggestion" title={a.id}>
+                {a.name}
+                <button className="icon-mini" aria-label={`Remove ${a.name}`} onClick={() => setCompose({ apps: compose.apps.filter((x) => x.id !== a.id) })}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="card-foot">
+          Pressing {composeKey} in any other app asks “Allow in that app?” first.{' '}
+          <button className="link-btn" onClick={() => setCompose({ apps: DEFAULT_COMPOSE_APPS.map((a) => ({ ...a })) })}>
+            Reset to the default list
+          </button>
+        </p>
+      </Card>
+
+      <Card title="Privacy">
+        <Row
+          label="Allow a cloud model"
+          help={
+            local
+              ? 'Your model runs on this computer, so your text never leaves it. This only matters if you switch .env to a cloud model.'
+              : `Your model is in the cloud (${config?.baseURL}). With this on, the text before your cursor is sent there to write suggestions.`
+          }
+        >
+          <Toggle on={compose.allowCloud} onChange={(on) => setCompose({ allowCloud: on })} label="Allow a cloud model" />
+        </Row>
+        <ul className="bullets">
+          <li>Reads only when you press {composeKey}, and only the box you're typing in.</li>
+          <li>Never reads password fields, terminals or password managers.</li>
+          <li>Nothing you type is saved. The Activity log only notes the app and how many characters were inserted.</li>
+          <li>Nothing is inserted until you pick an option.</li>
+        </ul>
+      </Card>
+    </Page>
+  )
+}
+
+const ARROWS: Record<string, string> = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right' }
+
+function HotkeyField({ value, mac, onChange }: { value: string; mac: boolean; onChange: (accel: string) => void }) {
+  const [capturing, setCapturing] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+
+  function capture(e: KeyboardEvent<HTMLButtonElement>) {
+    if (!capturing) return
+    e.preventDefault()
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return // wait for the real key
+    const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Command'].filter(Boolean) as string[]
+    // Use the physical key: on a Mac, Option+K reports e.key as "˚".
+    const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : (ARROWS[e.key] ?? (e.key === ' ' ? 'Space' : e.key))
+    const accel = [...mods, key].join('+')
+    setCapturing(false)
+    if (!isValidHotkey(accel)) return setNote('Use at least one modifier key (Ctrl, Alt, Shift or ⌘) and a letter, number or named key.')
+    if (accel === 'Alt+Space') return setNote('Alt+Space opens the Windows window menu, so pick another.')
+    setNote(null)
+    onChange(accel)
+  }
+
+  return (
+    <div className="hotkey-field">
+      <kbd className="key">{hotkeyLabelFor(value, mac)}</kbd>
+      <button
+        className="btn-ghost"
+        onClick={() => {
+          setCapturing(true)
+          setNote(null)
+        }}
+        onKeyDown={capture}
+        onBlur={() => setCapturing(false)}
+      >
+        {capturing ? 'Press new keys…' : 'Change'}
+      </button>
+      {note && <p className="card-foot">{note}</p>}
+    </div>
   )
 }
 

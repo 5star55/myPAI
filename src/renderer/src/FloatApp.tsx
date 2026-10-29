@@ -5,14 +5,17 @@
  *   right-click  -> menu (talk, Ecospace, chat, on/off, quiet mode, quit)
  * When the panel is closed it still shows proactive offers and the voice status as a card.
  */
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import type { AppState, FloatSize, Offer, VoiceStatus } from '@shared/ipc'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent } from 'react'
+import { looksLikeChat } from '@shared/intent'
+import { MAX_REVIEW_CHARS, type AppState, type FloatSize, type Offer, type ReviewAction, type Suggestion, type VoiceStatus } from '@shared/ipc'
+import { ChatNudge } from './components/ChatNudge'
 import { TaskCard } from './components/TaskCard'
 import { usePaiEvent } from './hooks'
 import { isActiveTask, useTasks } from './tasks'
 import { chime } from './audio'
 
 const CLICK_SLOP_PX = 4
+const MAX_MINI_SUGGESTIONS = 4
 const VOICE_LABEL: Record<VoiceStatus['state'], string> = {
   idle: '',
   listening: 'Listening',
@@ -29,11 +32,17 @@ export function FloatApp() {
   // Reminders that went off and haven't been dismissed yet (oldest first).
   const [reminders, setReminders] = useState<{ id: string; message: string }[]>([])
   const [draft, setDraft] = useState('')
+  /** A question typed into the panel: offer to ask it in the chat instead. */
+  const [nudge, setNudge] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  /** The heard words while reviewing; you can fix them before sending. */
+  const [heard, setHeard] = useState('')
   const tasks = useTasks()
   const drag = useRef<{ x: number; y: number; moved: number } | null>(null)
   const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
+  const reviewRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     document.body.classList.add('float-body')
@@ -49,13 +58,15 @@ export function FloatApp() {
   usePaiEvent('voice:status', (s) => {
     clearTimeout(hideTimer.current)
     setVoice(s)
+    if (s.state === 'review') setHeard(s.caption ?? '')
     // An idle message (e.g. "mic is off") stays a few seconds, then the card closes.
     if (s.state === 'idle' && s.caption) hideTimer.current = setTimeout(() => setVoice({ state: 'idle' }), 4000)
   })
 
   const voiceCard = voice.state !== 'idle' || !!voice.caption
   const reminder = reminders[0]
-  const size: FloatSize = panel ? 'panel' : reminder || offer || voiceCard ? 'card' : 'orb'
+  const reviewing = voice.state === 'review'
+  const size: FloatSize = panel ? 'panel' : reminder ? 'card' : reviewing ? 'review' : offer || voiceCard ? 'card' : 'orb'
   const closeReminder = (snooze: boolean) => {
     if (!reminder) return
     if (snooze) void window.pai.snoozeReminder(reminder.message)
@@ -64,6 +75,16 @@ export function FloatApp() {
   useEffect(() => {
     void window.pai.setFloatExpanded(size)
   }, [size])
+
+  // Reviewing what you said: take keyboard focus with the cursor at the end, ready to fix a word.
+  useEffect(() => {
+    if (!reviewing) return
+    void window.pai.focusFloat().then(() => {
+      const box = reviewRef.current
+      box?.focus()
+      box?.setSelectionRange(box.value.length, box.value.length)
+    })
+  }, [reviewing])
 
   // Opening the panel: take keyboard focus so you can type right away. Esc closes it.
   useEffect(() => {
@@ -102,13 +123,56 @@ export function FloatApp() {
     setOffer(null)
   }
 
-  async function start() {
-    const prompt = draft.trim()
+  // Live suggestions for the task being typed (or ideas when the box is empty), while the panel is open.
+  useEffect(() => {
+    if (!panel || !state.enabled) return setSuggestions([])
+    let stale = false
+    const t = setTimeout(async () => {
+      const res = await window.pai.suggest(draft)
+      if (!stale && res.ok) setSuggestions(res.value.slice(0, MAX_MINI_SUGGESTIONS))
+    }, 120)
+    return () => {
+      stale = true
+      clearTimeout(t)
+    }
+  }, [draft, panel, state.enabled, tasks.length])
+
+  async function start(text = draft, asTask = false) {
+    const prompt = text.trim()
     if (!prompt) return
     setError(null)
+    if (!asTask && looksLikeChat(prompt)) return setNudge(prompt)
+    setNudge(null)
     const res = await window.pai.startTask(prompt, 'orb')
     if (res.ok) setDraft('')
     else setError(res.error)
+    inputRef.current?.focus()
+  }
+
+  async function askInChat(text: string) {
+    setNudge(null)
+    const res = await window.pai.askInChat(text)
+    if (!res.ok) return setError(res.error)
+    setDraft('')
+    setPanel(false)
+  }
+
+  const review = (action: ReviewAction) => void window.pai.voiceReview(action, heard)
+
+  /** Enter sends what was heard (Shift+Enter = new line), Esc cancels. */
+  function onReviewKey(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      if (heard.trim()) review('send')
+    } else if (e.key === 'Escape') void window.pai.toggleVoice()
+  }
+
+  /** Tab takes the first suggestion. */
+  function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Tab' && !e.shiftKey && suggestions.length && draft.trim()) {
+      e.preventDefault()
+      setDraft(suggestions[0].text)
+    }
   }
 
   const active = tasks.filter(isActiveTask)
@@ -118,16 +182,27 @@ export function FloatApp() {
   const voiceView = voiceCard && (
     <div className={`voice-card voice-${voice.state}`} role="status" aria-live="polite">
       {voice.state !== 'idle' && <div className="voice-state">{VOICE_LABEL[voice.state]}</div>}
-      {voice.caption && <p className="offer-text">{voice.state === 'review' ? `“${voice.caption}”` : voice.caption}</p>}
+      {voice.caption && voice.state !== 'review' && <p className="offer-text">{voice.caption}</p>}
       {voice.state === 'review' ? (
         <>
-          <div className="review-bar" key={voice.caption} aria-hidden />
+          {/* Nothing is sent until you confirm. */}
+          <textarea
+            ref={reviewRef}
+            className="review-text"
+            value={heard}
+            maxLength={MAX_REVIEW_CHARS}
+            rows={3}
+            aria-label="What pai heard (you can edit it)"
+            onPointerDown={() => void window.pai.focusFloat()}
+            onChange={(e) => setHeard(e.target.value)}
+            onKeyDown={onReviewKey}
+          />
           <div className="offer-actions">
-            <button className="btn-primary btn-inline btn-sm" onClick={() => window.pai.voiceReview('send')}>
-              Send now
+            <button className="btn-primary btn-inline btn-sm" disabled={!heard.trim()} onClick={() => review('send')}>
+              Send
             </button>
-            <button className="btn-ghost btn-sm" onClick={() => window.pai.voiceReview('edit')}>
-              Edit
+            <button className="btn-ghost btn-sm" onClick={() => review('edit')}>
+              Open in chat
             </button>
             <button className="btn-ghost btn-sm" onClick={() => window.pai.toggleVoice()}>
               Cancel
@@ -201,7 +276,14 @@ export function FloatApp() {
               void start()
             }}
           >
-            <input ref={inputRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="What needs doing?" aria-label="New task" />
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                setNudge(null)
+              }}
+              onKeyDown={onKeyDown} placeholder="What needs doing?" aria-label="New task" />
             <button type="button" className={`icon-btn mic ${voice.state !== 'idle' ? 'mic-on' : ''}`} onClick={() => window.pai.toggleVoice()} aria-label="Say a task" title="Say a task">
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
                 <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
@@ -214,6 +296,17 @@ export function FloatApp() {
               </svg>
             </button>
           </form>
+          {suggestions.length > 0 && (
+            <div className="mini-ideas" aria-label="Suggestions">
+              {suggestions.map((s) => (
+                <button key={s.text} className="chip-suggestion" title={s.text} onClick={() => (s.send ? start(s.text, true) : setDraft(s.text))}>
+                  <span className="chip-text">{s.label}</span>
+                  {!s.send && <span className="chip-edit">✎</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {nudge && <ChatNudge compact onChat={() => void askInChat(nudge)} onTask={() => void start(nudge, true)} />}
           {error && <p className="mini-error">{error}</p>}
           <div className="mini-list">
             {active.length === 0 && recent.length === 0 && <p className="mini-empty">Type or say a task. It runs in the background and shows here.</p>}

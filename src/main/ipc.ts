@@ -8,9 +8,11 @@
  */
 import { existsSync, statSync } from 'node:fs'
 import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences, type IpcMainInvokeEvent } from 'electron'
-import { IPC, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
+import { IPC, MAX_REVIEW_CHARS, type AppState, type Result, type VoiceStatus } from '@shared/ipc'
 import { cancelRun, runChat } from './agent/loop'
 import { getPublicConfig } from './config'
+import { checkApiKey } from './model'
+import { checkKeyShape, removeApiKey, saveApiKey } from './store/apiKey'
 import { refreshProactive, respondOffer } from './proactive/engine'
 import { denyAllPending, respondPermission } from './security/permissions'
 import { deleteUserSkill, getSkill, installImport, listSkills, loadSkills, previewImport, saveUserSkill, showUserSkillsFolder } from './skills/loader'
@@ -27,11 +29,17 @@ import { stateStore } from './store/state'
 import { notify, scheduleNextReminder, snoozeReminder } from './reminders/scheduler'
 import { ensureChatWindow, getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { broadcast } from './windows/common'
+import { getComposeWindow } from './windows/composeWindow'
+import { refreshTray } from './windows/tray'
+import { platform } from './platform'
+import { chooseCompletion, checkComposeHotkey, composeAccess, composeAction, cancelCompose, syncComposeHotkey } from './compose'
 import { dragFloat, focusFloat, getFloatWindow, setFloatExpanded, showFloatMenu } from './windows/floatWindow'
-import { clearFinishedTasks, deleteTask, listTasks, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
-import type { FloatSize } from '@shared/ipc'
+import { clearFinishedTasks, deleteTask, listTasks, replyToTask, resumeTasks, retryTask, startTask, stopAllTasks, stopTask } from './tasks/manager'
+import { getPreviewWindow, openPreview, previewNav } from './windows/previewWindow'
+import { stopAllServers } from './tools/servers'
+import type { FloatSize, PreviewAction } from '@shared/ipc'
 
-type From = 'chat' | 'float' | 'any'
+type From = 'chat' | 'float' | 'compose' | 'preview' | 'any'
 
 function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -39,6 +47,8 @@ function senderAllowed(event: IpcMainInvokeEvent, from: From): boolean {
   const float = getFloatWindow()
   if (from === 'chat') return !!win && win === chat
   if (from === 'float') return !!win && win === float
+  if (from === 'compose') return !!win && win === getComposeWindow()
+  if (from === 'preview') return !!win && win === getPreviewWindow()
   return !!win && (win === chat || win === float)
 }
 
@@ -64,9 +74,12 @@ export function setEnabled(enabled: boolean): AppState {
   if (!enabled) {
     cancelRun() // abort the chat reply in progress
     stopAllTasks() // and every Ecospace task
+    cancelCompose() // and the "Complete my text" popup
     denyAllPending() // close open permission dialogs as "deny"
+    stopAllServers() // and the dev servers it started
   } else resumeTasks()
   refreshProactive()
+  refreshTray()
   broadcast('state:changed', state)
   return state
 }
@@ -74,6 +87,7 @@ export function setEnabled(enabled: boolean): AppState {
 export function setQuiet(quietMode: boolean): AppState {
   const state = stateStore.update((s) => ({ ...s, quietMode }))
   refreshProactive()
+  refreshTray()
   broadcast('state:changed', state)
   return state
 }
@@ -84,6 +98,25 @@ const isDir = (p: string): boolean => existsSync(p) && statSync(p).isDirectory()
 export function openEcospace(): void {
   const win = showChat()
   const send = (): void => win.webContents.send('ui:navigate', { tab: 'ecospace' })
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** Show the main window on the chat and send this message there. */
+export function askInChat(text: string): void {
+  const win = showChat()
+  const send = (): void => {
+    win.webContents.send('ui:navigate', { tab: 'chat' })
+    win.webContents.send('chat:prefill', { text })
+  }
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** Show the main window on a Settings section (e.g. "writing"). */
+export function openSettings(section: string): void {
+  const win = showChat()
+  const send = (): void => win.webContents.send('ui:navigate', { tab: 'settings', section })
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
   else send()
 }
@@ -115,7 +148,15 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.profileSave, 'chat', (raw) => {
     const profile = sanitizeProfile(raw)
     profile.approvedFolders = profile.approvedFolders.filter(isDir)
+    // A new Complete my text shortcut must be usable before anything is saved, so a clash changes nothing.
+    const before = profileStore.get().compose
+    const hotkeyChanging = profile.compose.hotkey !== before.hotkey || !before.enabled
+    if (profile.compose.enabled && hotkeyChanging && platform.supports.completeText) {
+      const problem = checkComposeHotkey(profile.compose.hotkey)
+      if (problem) return { ok: false, error: problem }
+    }
     profileStore.set(profile)
+    syncComposeHotkey() // "Complete my text" may have been switched on or off, or its shortcut changed
     resetSuggestIndex() // folders may have changed
     refreshProactive()
     broadcast('data:changed', { what: 'profile' })
@@ -199,10 +240,11 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.skillsShowFolder, 'chat', async () => ok(await showUserSkillsFolder()))
 
   // Voice input (local Whisper)
-  handle(IPC.micAccess, 'chat', async () => {
+  handle(IPC.micAccess, 'chat', async (prompt) => {
     // Automated tests run with Chromium's fake microphone; there is no real mic to ask about.
     if (process.platform !== 'darwin' || app.commandLine.hasSwitch('use-fake-device-for-media-stream')) return ok(true)
     if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return ok(true)
+    if (prompt === false) return ok(false)
     return ok(await systemPreferences.askForMediaAccess('microphone'))
   })
   handle(IPC.speechWarmUp, 'chat', () => ok(warmUpSpeech()))
@@ -215,18 +257,21 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     const s = raw as VoiceStatus
     const states: VoiceStatus['state'][] = ['idle', 'listening', 'thinking', 'speaking', 'review']
     if (!states.includes(s?.state)) return { ok: false, error: 'Bad status.' }
-    const status: VoiceStatus = { state: s.state, caption: typeof s.caption === 'string' ? s.caption.slice(0, 200) : undefined }
+    // The review caption is the whole message (it can be edited and sent), so it is not cut short.
+    const max = s.state === 'review' ? MAX_REVIEW_CHARS : 200
+    const status: VoiceStatus = { state: s.state, caption: typeof s.caption === 'string' ? s.caption.slice(0, max) : undefined }
     getFloatWindow()?.webContents.send('voice:status', status)
     return ok(undefined)
   })
   handle(IPC.voiceToggle, 'any', () => ok(toggleVoice()))
-  handle(IPC.voiceReview, 'float', (action) => {
+  handle(IPC.voiceReview, 'float', (action, text) => {
     if (action !== 'send' && action !== 'edit') return { ok: false, error: 'Bad action.' }
+    if (text !== undefined && typeof text !== 'string') return { ok: false, error: 'Bad text.' }
     const win = action === 'edit' ? showChat() : ensureChatWindow() // Edit opens the chat with the text
-    win.webContents.send('voice:review', { action })
+    win.webContents.send('voice:review', { action, text: text?.slice(0, MAX_REVIEW_CHARS) })
     return ok(undefined)
   })
-  handle(IPC.floatExpand, 'float', (size) => ok(setFloatExpanded((['orb', 'card', 'panel'] as FloatSize[]).includes(size as FloatSize) ? (size as FloatSize) : 'orb')))
+  handle(IPC.floatExpand, 'float', (size) => ok(setFloatExpanded((['orb', 'card', 'review', 'panel'] as FloatSize[]).includes(size as FloatSize) ? (size as FloatSize) : 'orb')))
   handle(IPC.floatFocus, 'float', () => ok(focusFloat()))
 
   // Ecospace tasks (from the main window or the orb)
@@ -234,9 +279,14 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
   handle(IPC.taskList, 'any', () => ok(listTasks()))
   handle(IPC.taskStop, 'any', (id) => ok(stopTask(id)))
   handle(IPC.taskRetry, 'any', (id) => ok(retryTask(id)))
+  handle(IPC.taskReply, 'any', (id, text) => ok(replyToTask(id, text)))
   handle(IPC.taskDelete, 'chat', (id) => ok(deleteTask(id)))
   handle(IPC.taskClearFinished, 'chat', () => ok(clearFinishedTasks()))
   handle(IPC.openEcospace, 'any', () => ok(openEcospace()))
+  handle(IPC.askInChat, 'any', (text) => {
+    if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Nothing to ask.' }
+    return ok(askInChat(text.trim().slice(0, 4000)))
+  })
   // Natural voice (local Kokoro) and the OS voice settings page.
   handle(IPC.ttsSynthesize, 'chat', (text, voice, rate) => synthesize(text, voice, rate))
   handle(IPC.ttsWarmUp, 'chat', () => ok(warmUpTts()))
@@ -252,11 +302,47 @@ export function registerIpc(menu: Parameters<typeof showFloatMenu>[0]): void {
     await shell.openExternal(url)
     return ok(undefined)
   })
-  handle(IPC.suggest, 'chat', async (text) => ok(stateStore.get().enabled ? await getSuggestions(text) : []))
+  handle(IPC.suggest, 'any', async (text) => ok(stateStore.get().enabled ? await getSuggestions(text) : []))
 
   // Offers + windows
   handle(IPC.offerRespond, 'float', (id, choice) => ok(respondOffer(id, choice)))
   handle(IPC.toggleChat, 'any', () => ok(toggleChat()))
   handle(IPC.floatDrag, 'float', (dx, dy) => ok(dragFloat(Number(dx), Number(dy))))
   handle(IPC.floatMenu, 'float', () => ok(showFloatMenu(menu)))
+
+  // The model API key: pasted in Settings / setup, checked with the server, stored encrypted in the data folder.
+  handle(IPC.apiKeySave, 'chat', async (raw) => {
+    const key = typeof raw === 'string' ? raw.trim() : ''
+    const problem = checkKeyShape(key)
+    if (problem) return { ok: false, error: problem }
+    const check = await checkApiKey(key)
+    if (check === 'rejected') return { ok: false, error: 'Nebius rejected that key. Check that you copied the whole key, and that it is still active.' }
+    saveApiKey(key)
+    broadcast('data:changed', { what: 'config' })
+    const note = check === 'unreachable' ? "Saved, but it couldn't be checked right now (no connection?). It will be used once you're online." : undefined
+    return ok({ config: getPublicConfig(), ...(note ? { note } : {}) })
+  })
+  handle(IPC.apiKeyRemove, 'chat', () => {
+    removeApiKey()
+    broadcast('data:changed', { what: 'config' })
+    return ok(getPublicConfig())
+  })
+
+  // Preview browser: the chat opens local pages in it; its toolbar navigates.
+  handle(IPC.previewOpen, 'chat', async (url) => {
+    if (typeof url !== 'string') return { ok: false, error: 'Bad address.' }
+    await openPreview(url)
+    return ok(undefined)
+  })
+  handle(IPC.previewNav, 'preview', async (action, url) => {
+    const actions: PreviewAction[] = ['state', 'back', 'forward', 'reload', 'go', 'devtools', 'external']
+    if (!actions.includes(action as PreviewAction)) return { ok: false, error: 'Bad action.' }
+    return ok(await previewNav(action as PreviewAction, typeof url === 'string' ? url.slice(0, 2000) : undefined))
+  })
+
+  // "Complete my text" popup (other apps)
+  handle(IPC.composeChoose, 'compose', async (i) => ok(await chooseCompletion(i)))
+  handle(IPC.composeCancel, 'compose', () => ok(cancelCompose()))
+  handle(IPC.composeAction, 'compose', async () => ok(await composeAction()))
+  handle(IPC.composeAccess, 'chat', async (prompt) => ok(await composeAccess(prompt === true)))
 }

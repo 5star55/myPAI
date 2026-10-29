@@ -6,11 +6,14 @@
  * task has its own Stop, its own live steps, and is saved in full
  * (<data>/tasks.json) so finished tasks are still there after a restart.
  *
+ * A finished task can be answered (it may have asked you something): your
+ * reply is added to its conversation and it runs again from there.
+ *
  * Tasks use the same agent loop as the chat, so every safety rule applies:
  * permission dialogs (labelled with the task's name), the folder allowlist,
  * the off switch, and the activity log.
  */
-import { MAX_PARALLEL_TASKS, type AgentEvent, type Task, type TaskSource, type TaskStatus } from '@shared/ipc'
+import { CHAT_LIMITS, MAX_PARALLEL_TASKS, type AgentEvent, type ChatTurn, type Task, type TaskSource, type TaskStatus } from '@shared/ipc'
 import { runAgent } from '../agent/loop'
 import { dataFile } from '../paths'
 import { JsonStore, isObj, newId } from '../store/jsonStore'
@@ -42,10 +45,17 @@ const store = new JsonStore<Task[]>(
           const task = t as unknown as Task
           // A task that was running when the app closed can't continue.
           if (ACTIVE.includes(task.status)) return { ...task, status: 'stopped' as const, error: 'The app was closed while this was running.', live: undefined, partial: undefined }
-          return { ...task, steps: Array.isArray(task.steps) ? task.steps : [] }
+          return { ...task, steps: Array.isArray(task.steps) ? task.steps : [], turns: cleanTurns(task.turns) }
         })
       : []
 )
+
+/** Saved conversation turns, checked (they come from disk). */
+function cleanTurns(raw: unknown): ChatTurn[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const turns = raw.filter((t): t is ChatTurn => (t?.role === 'user' || t?.role === 'assistant') && typeof t?.content === 'string')
+  return turns.length ? turns : undefined
+}
 
 let tasks: Task[] | null = null
 const all = (): Task[] => (tasks ??= store.get())
@@ -104,7 +114,16 @@ function pump(): void {
 async function run(task: Task): Promise<void> {
   const controller = new AbortController()
   controllers.set(task.id, controller)
-  setStatus(task, 'running', { startedAt: new Date().toISOString(), steps: [], partial: '', error: undefined, result: undefined })
+  // A reply keeps the earlier steps; a fresh task starts clean.
+  const history: ChatTurn[] = (task.turns ?? [{ role: 'user', content: task.prompt }]).slice(-CHAT_LIMITS.maxHistoryTurns)
+  const isReply = history.length > 1
+  setStatus(task, 'running', {
+    startedAt: isReply ? task.startedAt : new Date().toISOString(),
+    steps: isReply ? task.steps : [],
+    partial: '',
+    error: undefined,
+    result: undefined
+  })
 
   const emit = (e: AgentEvent) => {
     if (e.kind === 'text') task.partial = (task.partial ?? '') + e.delta
@@ -119,7 +138,7 @@ async function run(task: Task): Promise<void> {
     publish(task, e.kind !== 'text')
   }
 
-  const res = await runAgent([{ role: 'user', content: task.prompt }], controller.signal, {
+  const res = await runAgent(history, controller.signal, {
     emit,
     context: task.title,
     forceTools: true,
@@ -131,7 +150,10 @@ async function run(task: Task): Promise<void> {
 
   const finishedAt = new Date().toISOString()
   if (controller.signal.aborted) setStatus(task, 'stopped', { finishedAt, live: undefined, partial: undefined, error: isEnabled() ? 'Stopped.' : 'The assistant was switched off.' })
-  else if (res.ok) setStatus(task, 'done', { finishedAt, live: undefined, partial: undefined, result: res.value.text })
+  else if (res.ok) {
+    const turns = task.turns ? [...task.turns, { role: 'assistant' as const, content: res.value.text }] : undefined
+    setStatus(task, 'done', { finishedAt, live: undefined, partial: undefined, result: res.value.text, turns })
+  }
   else setStatus(task, 'failed', { finishedAt, live: undefined, partial: undefined, error: res.error })
   pump()
 }
@@ -173,6 +195,24 @@ export function retryTask(id: unknown): Task {
   const task = all().find((t) => t.id === id)
   if (!task) throw new Error('That task no longer exists.')
   return startTask(task.prompt, task.source)
+}
+
+/** Answer a finished task; it runs again with the whole conversation so far. */
+export function replyToTask(id: unknown, text: unknown): Task {
+  if (!isEnabled()) throw new Error('The assistant is switched off. Turn it on with the power button.')
+  const task = all().find((t) => t.id === id)
+  if (!task) throw new Error('That task no longer exists.')
+  if (isActive(task)) throw new Error('Wait for this task to finish, then reply.')
+  if (typeof text !== 'string' || !text.trim()) throw new Error('Type a reply first.')
+  const reply = text.trim().slice(0, MAX_PROMPT)
+
+  const turns: ChatTurn[] = task.turns ?? [{ role: 'user', content: task.prompt }, ...(task.result ? [{ role: 'assistant' as const, content: task.result }] : [])]
+  const last = turns[turns.length - 1]
+  // A stopped or failed round never got an answer: add the reply to that message instead.
+  task.turns = last.role === 'user' ? [...turns.slice(0, -1), { role: 'user', content: `${last.content}\n\n${reply}` }] : [...turns, { role: 'user', content: reply }]
+  setStatus(task, 'queued', { result: undefined, error: undefined, finishedAt: undefined })
+  pump()
+  return { ...task, steps: [...task.steps] }
 }
 
 export function deleteTask(id: unknown): void {

@@ -8,17 +8,25 @@
  */
 import { useEffect, useState } from 'react'
 import type { ToolStep } from '@shared/ipc'
-import { THINKING_WORDS, toolDetail, toolLabel } from '../toolLabels'
+import { THINKING_WORDS, summarizeSteps, toolDetail, toolLabel } from '../toolLabels'
 import { MiniOrb } from './MiniOrb'
+import { RichText } from './RichText'
 import { WebResults } from './WebResults'
 
 const PREVIEW_LINES = 4
 
 const STATUS_NOTE: Record<ToolStep['status'], string> = { ok: '', denied: 'Denied', error: 'Failed', blocked: 'Not allowed' }
 
-/** One finished step. */
+/** One finished step. A "note" is what the assistant said between steps. */
 export function StepRow({ step }: { step: ToolStep }) {
   const [open, setOpen] = useState(false)
+  if (step.tool === 'note') {
+    return (
+      <div className="act-say">
+        <RichText text={step.summary} />
+      </div>
+    )
+  }
   const lines = step.output?.split('\n') ?? []
   const shown = open ? lines : lines.slice(0, PREVIEW_LINES)
   const hidden = lines.length - shown.length
@@ -52,7 +60,100 @@ export function StepRow({ step }: { step: ToolStep }) {
         </div>
       )}
       {step.data?.kind === 'web' && <WebResults query={step.data.query} results={step.data.results} />}
+      {step.data?.kind === 'preview' && <PreviewLink url={step.data.url} />}
     </div>
+  )
+}
+
+/** "Open preview ↗" under a step that started a server or looked at a page. */
+function PreviewLink({ url }: { url: string }) {
+  const [error, setError] = useState<string | null>(null)
+  async function open() {
+    const res = await window.pai.openPreview(url)
+    setError(res.ok ? null : res.error)
+  }
+  return (
+    <button className="preview-link" onClick={() => void open()} title={error ?? `Show ${url} in the preview`}>
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
+        <rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M3 9h18" stroke="currentColor" strokeWidth="2" />
+      </svg>
+      Open preview
+      <span className="preview-url">{url.replace(/^https?:\/\//, '')}</span>
+    </button>
+  )
+}
+
+/**
+ * A finished run's steps, folded into one line ("Searched the web, read 2 files ▸")
+ * so the answer stays in view. Problems (denied, failed) are counted in the line.
+ */
+export function StepList({ steps }: { steps: ToolStep[] }) {
+  const [open, setOpen] = useState(false)
+  if (steps.length === 0) return null
+  const problems = steps.filter((s) => s.status !== 'ok').length
+  const summary = summarizeSteps(steps)
+  // Previews stay one click away even while folded.
+  const preview = [...steps].reverse().find((s) => s.data?.kind === 'preview')?.data
+  if (!summary || open) {
+    return (
+      <div className="acts">
+        {steps.map((s, i) => (
+          <StepRow key={i} step={s} />
+        ))}
+        {open && (
+          <button className="link-btn act-more act-fold" onClick={() => setOpen(false)}>
+            Hide steps
+          </button>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div className="acts-folded">
+      <button className="acts-summary" onClick={() => setOpen(true)} aria-expanded={false}>
+        {summary}
+        {problems ? <span className="acts-problems"> · {problems} didn't go through</span> : null}
+        <span className="acts-chevron" aria-hidden>
+          ▸
+        </span>
+      </button>
+      {preview?.kind === 'preview' && <PreviewLink url={preview.url} />}
+    </div>
+  )
+}
+
+/** Copy text to the clipboard, with a short "Copied" confirmation. */
+export function CopyButton({ text, className = '', icon = false }: { text: string; className?: string; icon?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard unavailable: the text can still be selected */
+    }
+  }
+  return (
+    <button type="button" className={`msg-action ${icon ? 'msg-icon' : ''} ${className}`} onClick={() => void copy()} title={copied ? 'Copied' : 'Copy'} aria-label="Copy">
+      {icon ? (
+        copied ? (
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+            <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+            <rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          </svg>
+        )
+      ) : copied ? (
+        '✓ Copied'
+      ) : (
+        'Copy'
+      )}
+    </button>
   )
 }
 

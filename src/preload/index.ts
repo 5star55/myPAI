@@ -50,7 +50,7 @@ const api: PaiApi = {
 
   respondOffer: (id, choice) => call(IPC.offerRespond, id, choice),
 
-  requestMic: () => call(IPC.micAccess),
+  requestMic: (prompt = true) => call(IPC.micAccess, prompt),
   warmUpSpeech: () => call(IPC.speechWarmUp),
   transcribe: (audio) => call(IPC.speechTranscribe, audio),
   suggest: (text) => call(IPC.suggest, text),
@@ -69,15 +69,27 @@ const api: PaiApi = {
   listTasks: () => call(IPC.taskList),
   stopTask: (id) => call(IPC.taskStop, id),
   retryTask: (id) => call(IPC.taskRetry, id),
+  replyToTask: (id, text) => call(IPC.taskReply, id, text),
   deleteTask: (id) => call(IPC.taskDelete, id),
   clearFinishedTasks: () => call(IPC.taskClearFinished),
   openEcospace: () => call(IPC.openEcospace),
+  askInChat: (text) => call(IPC.askInChat, text),
   toggleVoice: () => call(IPC.voiceToggle),
-  voiceReview: (action) => call(IPC.voiceReview, action),
+  voiceReview: (action, text) => call(IPC.voiceReview, action, text),
+
+  composeChoose: (index) => call(IPC.composeChoose, index),
+  composeCancel: () => call(IPC.composeCancel),
+  composeAction: () => call(IPC.composeAction),
+  composeAccess: (prompt) => call(IPC.composeAccess, prompt),
 
   toggleChat: () => call(IPC.toggleChat),
   dragFloat: (dx, dy) => call(IPC.floatDrag, dx, dy),
   showFloatMenu: () => call(IPC.floatMenu),
+
+  saveApiKey: (key) => call(IPC.apiKeySave, key),
+  removeApiKey: () => call(IPC.apiKeyRemove),
+  openPreview: (url) => call(IPC.previewOpen, url),
+  previewNav: (action, url) => call(IPC.previewNav, action, url),
 
   on(event, cb) {
     if (!EVENT_NAMES.includes(event)) throw new Error(`Unknown event: ${event}`)

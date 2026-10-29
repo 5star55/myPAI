@@ -1,10 +1,12 @@
 /**
- * "Generate your AI" — first-run wizard. Saves the profile, which is then
+ * "Generate your AI": first-run wizard. Saves the profile, which is then
  * used to build the system prompt, the tool list and the allowlist.
  */
 import { useEffect, useState } from 'react'
-import type { Profile, SkillInfo } from '@shared/ipc'
+import type { Profile, PublicConfig, SkillInfo } from '@shared/ipc'
+import { ApiKeyField } from '../components/ApiKeyField'
 import { Orb } from '../components/Orb'
+import { PermissionChecklist } from '../components/PermissionChecklist'
 import { FoldersField, IdentityFields, PermissionsField, ProactiveField, SkillsField } from '../components/ProfileFields'
 
 const STEPS = ['Identity', 'Folders', 'Permissions', 'Skills'] as const
@@ -15,18 +17,23 @@ export function Setup({ initial, onDone }: { initial: Profile; onDone: (p: Profi
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [config, setConfig] = useState<PublicConfig | null>(null)
   const set = (patch: Partial<Profile>) => setProfile((p) => ({ ...p, ...patch }))
+
+  useEffect(() => {
+    window.pai.getConfig().then((r) => r.ok && setConfig(r.value))
+  }, [])
 
   useEffect(() => {
     window.pai.listSkills().then((r) => {
       if (!r.ok) return
       setSkills(r.value)
       // First run: every working skill starts switched on.
-      if (initial.enabledSkills.length === 0) {
+      if (!initial.setupComplete) {
         set({ enabledSkills: r.value.filter((s) => !s.error).map((s) => s.id) })
       }
     })
-  }, [initial.enabledSkills.length])
+  }, [initial.setupComplete])
 
   async function generate() {
     setGenerating(true)
@@ -73,9 +80,25 @@ export function Setup({ initial, onDone }: { initial: Profile; onDone: (p: Profi
       </ol>
 
       <section className="glass panel setup-panel">
-        {step === 0 && <IdentityFields profile={profile} set={set} />}
+        {step === 0 && (
+          <>
+            {/* The installed app needs the user's own Nebius key before it can answer. */}
+            {config && (config.needsApiKey || config.apiKeySource === 'settings') && (
+              <div className="setup-key">
+                <h3>Your Nebius API key</h3>
+                <ApiKeyField config={config} onChange={setConfig} />
+              </div>
+            )}
+            <IdentityFields profile={profile} set={set} />
+          </>
+        )}
         {step === 1 && <FoldersField profile={profile} set={set} />}
-        {step === 2 && <PermissionsField profile={profile} set={set} />}
+        {step === 2 && (
+          <>
+            <PermissionsField profile={profile} set={set} />
+            <PermissionChecklist />
+          </>
+        )}
         {step === 3 && (
           <>
             <SkillsField profile={profile} set={set} skills={skills} />

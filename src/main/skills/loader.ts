@@ -10,13 +10,16 @@
  *   name: File Organizer
  *   description: Keeps folders tidy
  *   permissions: files_read, files_write
+ *   triggers: tidy, organize, clean up      (optional)
  *   ---
  *   Instructions for the assistant go here...
  *
  * or JSON (.json): { "name", "description", "instructions", "permissions": [] }
  *
  * A skill is active only if it is enabled in the profile AND every permission
- * it needs is switched on. Skills are instructions only: they can never grant
+ * it needs is switched on. A skill with triggers is only added to the prompt when
+ * the user's recent messages contain one of them (so a quiz skill doesn't turn every
+ * question into a quiz). Skills are instructions only: they can never grant
  * permissions, and every action still goes through the permission dialog.
  *
  * Uploading is two steps: previewImport() reads and validates the files and
@@ -32,6 +35,8 @@ import { dataFile, skillsDir } from '../paths'
 interface Skill extends Omit<SkillInfo, 'enabled' | 'missing'> {
   instructions: string
   path: string
+  /** Words or phrases that switch the skill on for a message (none = always on). */
+  triggers?: string[]
 }
 
 export const MAX_SKILL_BYTES = 64 * 1024
@@ -69,7 +74,10 @@ function parseMarkdown(text: string): Record<string, string> {
 }
 
 /** Validate skill text. Throws a readable error if it isn't a valid skill. */
-export function parseSkill(text: string, ext: string): { name: string; description: string; permissions: PermissionKey[]; instructions: string } {
+export function parseSkill(
+  text: string,
+  ext: string
+): { name: string; description: string; permissions: PermissionKey[]; instructions: string; triggers?: string[] } {
   if (text.length > MAX_SKILL_BYTES) throw new Error('the file is larger than 64 KB')
   let raw: Record<string, unknown>
   if (ext === '.json') {
@@ -89,8 +97,20 @@ export function parseSkill(text: string, ext: string): { name: string; descripti
     name: name.slice(0, 60),
     description: String(raw.description ?? '').trim().slice(0, 200),
     permissions: parsePermissions(raw.permissions),
-    instructions
+    instructions,
+    ...(parseTriggers(raw.triggers).length ? { triggers: parseTriggers(raw.triggers) } : {})
   }
+}
+
+function parseTriggers(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : []
+  return list.map((t) => String(t).trim().toLowerCase()).filter(Boolean).slice(0, 40)
+}
+
+/** Does the text mention one of the triggers (as whole words; "quiz" also matches "quizzes")? */
+function mentions(text: string, triggers: string[]): boolean {
+  const lower = text.toLowerCase()
+  return triggers.some((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(lower))
 }
 
 /** The .md file the editor writes. */
@@ -151,8 +171,14 @@ export function listSkills(profile: Profile): SkillInfo[] {
 }
 
 /** Skills that will be added to the system prompt. */
-export function activeSkills(profile: Profile): Skill[] {
-  return skills.filter((s) => !s.error && profile.enabledSkills.includes(s.id) && s.permissions.every((p) => profile.permissions[p]))
+export function activeSkills(profile: Profile, recentText?: string): Skill[] {
+  return skills.filter(
+    (s) =>
+      !s.error &&
+      profile.enabledSkills.includes(s.id) &&
+      s.permissions.every((p) => profile.permissions[p]) &&
+      (!s.triggers?.length || recentText === undefined || mentions(recentText, s.triggers))
+  )
 }
 
 export function getSkill(id: unknown): SkillDetail {

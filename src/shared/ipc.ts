@@ -4,6 +4,7 @@
  * Both sides import from this file, so a renamed channel or a changed type
  * becomes a compile error instead of a silent runtime bug.
  */
+import type { ComposeSettings, ComposeView } from './compose'
 
 /** Every IPC call returns this shape. The renderer never has to catch exceptions. */
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -19,6 +20,12 @@ export interface PublicConfig {
   smallModel: string
   bigModel: string
   hasApiKey: boolean
+  /** Live on a hosted server with no key: the user must paste one in Settings → AI model. */
+  needsApiKey: boolean
+  /** Where the key comes from (the key itself never reaches the UI). */
+  apiKeySource: 'settings' | 'env' | 'none'
+  /** Its last 4 characters ("…a1b2"), or '' when there is none. */
+  apiKeyHint: string
   webSearchConfigured: boolean
   /** Problems found in .env, shown to the user instead of crashing. */
   warnings: string[]
@@ -104,6 +111,8 @@ export interface Profile {
   approvedFolders: string[]
   permissions: Record<PermissionKey, boolean>
   enabledSkills: string[]
+  /** Built-in skills that were switched on by default once (so switching one off sticks). */
+  defaultSkillsApplied: string[]
   /** Proactive offers (active window, Downloads watcher). */
   proactive: boolean
   /** Hands-free: listen for "Hey <assistantName>" all the time (mic stays open). */
@@ -111,6 +120,8 @@ export interface Profile {
   voice: VoiceChoice
   /** 'ask' = confirm every command; 'auto' = run and report (risky ones still ask). */
   commandMode: CommandMode
+  /** "Complete my text" in other apps (hotkey). */
+  compose: ComposeSettings
 }
 
 export interface AppState {
@@ -128,6 +139,13 @@ export interface AppState {
 export interface ChatTurn {
   role: 'user' | 'assistant'
   content: string
+  /** Pictures attached to a user message, as data URLs (see isImageDataUrl). */
+  images?: string[]
+}
+
+/** A picture the model can look at: a base64 PNG, JPEG, WebP or GIF data URL. */
+export function isImageDataUrl(v: unknown): v is string {
+  return typeof v === 'string' && v.length <= CHAT_LIMITS.maxImageChars && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/.test(v)
 }
 
 export type StepStatus = 'ok' | 'denied' | 'error' | 'blocked'
@@ -140,7 +158,7 @@ export interface WebResult {
 }
 
 /** Rich results a tool can return for the UI (shown as cards, not text). */
-export type ToolData = { kind: 'web'; query: string; results: WebResult[] }
+export type ToolData = { kind: 'web'; query: string; results: WebResult[] } | { kind: 'preview'; url: string }
 
 /** One tool the assistant used while answering. */
 export interface ToolStep {
@@ -173,7 +191,10 @@ export type AgentEvent =
 /** Limits enforced in main (and mirrored in the UI for a nicer experience). */
 export const CHAT_LIMITS = {
   maxMessageChars: 8000,
-  maxHistoryTurns: 20
+  maxHistoryTurns: 20,
+  /** Pictures per message, and the size of each (as a data URL; the UI shrinks them first). */
+  maxImages: 4,
+  maxImageChars: 4_000_000
 } as const
 
 // ---------------------------------------------------------------------------
@@ -290,6 +311,8 @@ export interface Task {
   /** Final answer. */
   result?: string
   error?: string
+  /** The whole conversation once you've replied to the task (first turn = the prompt). */
+  turns?: ChatTurn[]
 }
 
 /** How many tasks may run at the same time; the rest wait in the queue. */
@@ -305,6 +328,7 @@ export interface StoredMessage {
   content: string
   /** ISO time the message was sent or received. */
   at: string
+  images?: string[]
   steps?: ToolStep[]
   failed?: 'stopped' | 'error'
 }
@@ -373,14 +397,17 @@ export type OfferChoice = 'accept' | 'dismiss' | 'snooze'
 
 /** What the hands-free voice is doing (shown on the floating orb). */
 export interface VoiceStatus {
-  /** 'review' = showing what was heard for a moment, with Send now / Edit. */
+  /** 'review' = showing what was heard, editable, until you press Send / Edit / Cancel. */
   state: 'idle' | 'listening' | 'thinking' | 'speaking' | 'review'
   caption?: string
 }
 
 export type ReviewAction = 'send' | 'edit'
 
-export type FloatSize = 'orb' | 'card' | 'panel'
+/** Longest message the orb's review box will pass on. */
+export const MAX_REVIEW_CHARS = 2000
+
+export type FloatSize = 'orb' | 'card' | 'review' | 'panel'
 
 /** The global push-to-talk shortcut. */
 export const VOICE_HOTKEY = 'CommandOrControl+Shift+Space'
@@ -431,9 +458,11 @@ export const IPC = {
   taskList: 'tasks:list',
   taskStop: 'tasks:stop',
   taskRetry: 'tasks:retry',
+  taskReply: 'tasks:reply',
   taskDelete: 'tasks:delete',
   taskClearFinished: 'tasks:clear-finished',
   openEcospace: 'window:open-ecospace',
+  askInChat: 'window:ask-in-chat',
   floatFocus: 'float:focus',
   convList: 'conversations:list',
   convGet: 'conversations:get',
@@ -449,7 +478,15 @@ export const IPC = {
   floatExpand: 'float:expand',
   toggleChat: 'window:toggle-chat',
   floatDrag: 'float:drag',
-  floatMenu: 'float:menu'
+  floatMenu: 'float:menu',
+  composeChoose: 'compose:choose',
+  composeCancel: 'compose:cancel',
+  composeAction: 'compose:action',
+  composeAccess: 'compose:access',
+  apiKeySave: 'api-key:save',
+  apiKeyRemove: 'api-key:remove',
+  previewOpen: 'preview:open',
+  previewNav: 'preview:nav'
 } as const
 
 /** Push events (main -> renderer) and their payloads. */
@@ -460,23 +497,29 @@ export interface EventMap {
   'state:changed': AppState
   'offer:show': Offer
   'offer:clear': { id: string }
-  'data:changed': { what: 'memory' | 'activity' | 'reminders' | 'profile' | 'skills' | 'conversations' }
+  'data:changed': { what: 'memory' | 'activity' | 'reminders' | 'profile' | 'skills' | 'conversations' | 'config' }
   /** Main asks the chat screen to send this message (accepted proactive offer). */
   'chat:prefill': { text: string }
   /** Hotkey pressed: start/stop a hands-free conversation (sent to the chat window). */
   'voice:toggle': Record<string, never>
   /** Hands-free status for the floating orb. */
   'voice:status': VoiceStatus
-  /** Orb's "Send now" / "Edit" during review (sent to the chat window). */
-  'voice:review': { action: ReviewAction }
+  /** Orb's "Send" / "Open in chat" during review, with the (possibly edited) text (sent to the chat window). */
+  'voice:review': { action: ReviewAction; text?: string }
   /** A task changed (sent to every window). */
   'task:update': Task
   /** A task was deleted. */
   'task:removed': { id: string }
   /** Main asks the main window to show a screen. */
-  'ui:navigate': { tab: 'ecospace' | 'chat' }
+  'ui:navigate': { tab: 'ecospace' | 'chat' | 'settings'; section?: string }
   /** A reminder is due (the orb shows a card; the main window reads it aloud). */
   'reminder:fired': { id: string; message: string }
+  /** What the "Complete my text" popup shows (sent to the popup only). */
+  'compose:view': ComposeView
+  /** The window was hidden/minimized or shown again (pages can't tell on their own: throttling is off). */
+  'window:visibility': { hidden: boolean }
+  /** What the preview browser shows (sent to the preview window's toolbar). */
+  'preview:state': PreviewState
 }
 export type EventName = keyof EventMap
 export const EVENT_NAMES: EventName[] = [
@@ -494,10 +537,31 @@ export const EVENT_NAMES: EventName[] = [
   'task:update',
   'task:removed',
   'ui:navigate',
-  'reminder:fired'
+  'reminder:fired',
+  'compose:view',
+  'window:visibility',
+  'preview:state'
 ]
 
+/** The little browser that shows the app being built (local addresses only). */
+export interface PreviewState {
+  url: string
+  title: string
+  loading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  /** Console errors and failed loads since the last page load. */
+  errors: number
+}
+export type PreviewAction = 'state' | 'back' | 'forward' | 'reload' | 'go' | 'devtools' | 'external'
+
 /** The API the preload script exposes on window.pai. */
+export interface ComposeAccess {
+  /** false on Windows/Linux, or when the helper couldn't be built. */
+  available: boolean
+  trusted: boolean
+}
+
 export interface PaiApi {
   getConfig(): Promise<Result<PublicConfig>>
   /** Send the conversation so far; the last turn must be the user's new message. */
@@ -548,8 +612,8 @@ export interface PaiApi {
 
   respondOffer(id: string, choice: OfferChoice): Promise<Result<void>>
 
-  /** Ask the OS for microphone access (macOS shows a prompt the first time). */
-  requestMic(): Promise<Result<boolean>>
+  /** Ask the OS for microphone access (macOS shows a prompt the first time). With prompt false, only reports the current status. */
+  requestMic(prompt?: boolean): Promise<Result<boolean>>
   /** Start loading the local speech model in the background. */
   warmUpSpeech(): Promise<Result<void>>
   /** Transcribe mono 16 kHz audio locally. Returns the text. */
@@ -569,14 +633,19 @@ export interface PaiApi {
   stopTask(id: string): Promise<Result<void>>
   /** Run a finished task again (as a new task). */
   retryTask(id: string): Promise<Result<Task>>
+  /** Answer a finished task (e.g. it asked you a question) so it carries on. */
+  replyToTask(id: string, text: string): Promise<Result<Task>>
   deleteTask(id: string): Promise<Result<void>>
   clearFinishedTasks(): Promise<Result<void>>
   /** Show the main window on the Ecospace. */
   openEcospace(): Promise<Result<void>>
+  /** Open the chat and send this message there (a question typed into the Ecospace). */
+  askInChat(text: string): Promise<Result<void>>
   /** Start/stop a hands-free conversation (same as the hotkey). */
   toggleVoice(): Promise<Result<void>>
   /** Orb: answer the review of what was heard ("send now" or "edit in the chat"). */
-  voiceReview(action: ReviewAction): Promise<Result<void>>
+  /** `text` = the heard words after any edits on the orb. */
+  voiceReview(action: ReviewAction, text?: string): Promise<Result<void>>
 
   /** Natural voice: turn text into speech (mono PCM) on this computer. */
   synthesize(text: string, voice: string, rate: number): Promise<Result<{ audio: Float32Array; sampleRate: number }>>
@@ -596,11 +665,33 @@ export interface PaiApi {
   /** Live suggestions for what the user is typing or saying (local, no model call). */
   suggest(text: string): Promise<Result<Suggestion[]>>
 
+  /** "Complete my text" popup: insert option i, close, or press its fix-it button. */
+  composeChoose(index: number): Promise<Result<void>>
+  composeCancel(): Promise<Result<void>>
+  composeAction(): Promise<Result<void>>
+  /** Is the Accessibility permission granted? prompt=true also asks macOS / opens the settings page. */
+  composeAccess(prompt: boolean): Promise<Result<ComposeAccess>>
+
   toggleChat(): Promise<Result<void>>
   /** Move the floating icon by a screen-pixel delta. */
   dragFloat(dx: number, dy: number): Promise<Result<void>>
   showFloatMenu(): Promise<Result<void>>
 
+  /**
+   * Save the model API key pasted in Settings (stored encrypted in pai's data folder).
+   * It is checked with the server first; a rejected key is not saved. `note` explains a key
+   * that was saved without being checked (e.g. offline).
+   */
+  saveApiKey(key: string): Promise<Result<{ config: PublicConfig; note?: string }>>
+  removeApiKey(): Promise<Result<PublicConfig>>
+
+  /** Open a local address (e.g. http://localhost:3000) in the preview browser. */
+  openPreview(url: string): Promise<Result<void>>
+  /** Preview toolbar: navigate, reload, open devtools… ('go' takes a url). Returns the new state. */
+  previewNav(action: PreviewAction, url?: string): Promise<Result<PreviewState>>
+
   /** Subscribe to a push event. Returns an unsubscribe function. */
   on<E extends EventName>(event: E, cb: (payload: EventMap[E]) => void): () => void
 }
+
+export type { ComposeSettings, ComposeView } from './compose'

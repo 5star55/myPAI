@@ -6,7 +6,11 @@
 import { app, globalShortcut, session } from 'electron'
 import { VOICE_HOTKEY } from '@shared/ipc'
 import { getConfig } from './config'
-import { openEcospace, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { syncComposeHotkey } from './compose'
+import { stopHelper } from './compose/helper'
+import { askInChat, openEcospace, openSettings, registerIpc, setEnabled, setQuiet, toggleVoice } from './ipc'
+import { filesFromArgs, summarizeRequest } from './sendTo'
+import { stopAllServers } from './tools/servers'
 import { refreshProactive, setChatSender } from './proactive/engine'
 import { startReminderScheduler } from './reminders/scheduler'
 import { loadSkills } from './skills/loader'
@@ -14,6 +18,7 @@ import { stateStore } from './store/state'
 import { getChatWindow, showChat, toggleChat } from './windows/chatWindow'
 import { lifecycle } from './windows/common'
 import { createFloatWindow, getFloatWindow } from './windows/floatWindow'
+import { createTray, destroyTray } from './windows/tray'
 
 // Log unexpected errors instead of letting Electron show a crash dialog.
 process.on('uncaughtException', (err) => console.error('[main] uncaught exception:', err))
@@ -22,9 +27,23 @@ process.on('unhandledRejection', (err) => console.error('[main] unhandled reject
 // Optional: keep data somewhere else (handy for testing with a throwaway profile).
 if (process.env.PAI_DATA_DIR) app.setPath('userData', process.env.PAI_DATA_DIR)
 
-// Only one copy of pai at a time; a second launch focuses the first.
-if (!app.requestSingleInstanceLock()) app.quit()
-app.on('second-instance', () => showChat())
+/** Ask the chat to summarize files from "Send to pai". Uses the normal chat flow, so the usual permissions apply. */
+function sendFiles(files: string[]): void {
+  if (files.length) askInChat(summarizeRequest(files))
+}
+
+// Only one copy of pai at a time. A second launch (for example, with a file path) hands its arguments to this copy.
+const isPrimary = app.requestSingleInstanceLock()
+if (!isPrimary) app.quit()
+
+app.on('second-instance', (_event, argv) => {
+  const files = filesFromArgs(argv)
+  if (files.length) sendFiles(files)
+  else showChat()
+})
+
+// Windows routes notification clicks and buttons back to the app by this id.
+if (process.platform === 'win32') app.setAppUserModelId('com.pai.app')
 
 app.whenReady().then(() => {
   const cfg = getConfig()
@@ -60,12 +79,25 @@ app.whenReady().then(() => {
   })
 
   showChat()
+  if (isPrimary) sendFiles(filesFromArgs(process.argv))
   createFloatWindow()
+  createTray({
+    talk: toggleVoice,
+    openEcospace,
+    isEnabled: () => stateStore.get().enabled,
+    isQuiet: () => stateStore.get().quietMode,
+    toggleChat,
+    setEnabled: (on) => void setEnabled(on),
+    setQuiet: (on) => void setQuiet(on),
+    quit: () => app.quit()
+  })
 
   // Push-to-talk from anywhere. If another app owns the shortcut, say so (the orb menu still works).
   if (!globalShortcut.register(VOICE_HOTKEY, toggleVoice)) {
     console.warn(`[voice] could not register ${VOICE_HOTKEY}; another app may be using it`)
   }
+  // "Complete my text" (⌃⌥Space in other apps), only while switched on in Settings.
+  syncComposeHotkey(openSettings)
   startReminderScheduler()
   refreshProactive()
 
@@ -76,10 +108,14 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   lifecycle.quitting = true
 })
-app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  stopHelper()
+  destroyTray()
+  stopAllServers() // dev servers pai started never outlive it
+})
 
 // The floating icon keeps the app alive; quit from its right-click menu.
 app.on('window-all-closed', () => {
   if (!getChatWindow() && !getFloatWindow()) app.quit()
 })
-

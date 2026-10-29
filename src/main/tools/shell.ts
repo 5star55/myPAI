@@ -12,7 +12,7 @@
  * Commands get a clean environment (no API keys), a timeout, and are killed
  * together with anything they started when you press Stop or the off switch.
  */
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { app } from 'electron'
@@ -50,12 +50,13 @@ export function riskOf(command: string): string | null {
 
 /** Commands may never touch pai's own data/code or common secret stores. */
 export function touchesProtected(command: string): boolean {
-  const lower = command.toLowerCase()
-  const home = homedir().toLowerCase()
-  const paths = [dataDir(), app.getAppPath()].map((p) => p.toLowerCase())
+  const norm = (s: string) => s.toLowerCase().replace(/\\/g, '/')
+  const lower = norm(command)
+  const home = norm(homedir())
+  const paths = [dataDir(), app.getAppPath()].map(norm)
   if (paths.some((p) => lower.includes(p))) return true
   if (/(^|[\s'"/])\.env\b/.test(lower)) return true
-  if (/(~|\$home|\$\{home\})\/\.(ssh|gnupg|aws)\b|keychains/.test(lower) || [`${home}/.ssh`, `${home}/.gnupg`, `${home}/.aws`].some((p) => lower.includes(p))) return true
+  if (/(~|\$home|\$\{home\}|\$env:(userprofile|home)|%userprofile%)\/\.(ssh|gnupg|aws)\b|keychains/.test(lower) || [`${home}/.ssh`, `${home}/.gnupg`, `${home}/.aws`].some((p) => lower.includes(p))) return true
   if (/\bsecurity\s+(find|dump|export)-/.test(lower)) return true // macOS keychain reading
   return false
 }
@@ -71,19 +72,36 @@ export function cleanEnv(): NodeJS.ProcessEnv {
   return env
 }
 
-function shellFor(): [string, string[]] {
+export function shellFor(): [string, string[]] {
   if (process.platform === 'win32') return ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command']]
   // A login shell, so PATH includes things like Homebrew.
   return [process.env.SHELL && existsSync(process.env.SHELL) ? process.env.SHELL : '/bin/sh', ['-lc']]
 }
 
-class CommandError extends Error {
+export class CommandError extends Error {
   constructor(
     message: string,
     readonly output: string
   ) {
     super(message)
   }
+}
+
+/** Stop a command started with detached: true, and everything it started. */
+export function killTree(child: ChildProcess): void {
+  try {
+    if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM')
+    else child.kill()
+  } catch {
+    /* already gone */
+  }
+  setTimeout(() => {
+    try {
+      if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
+    } catch {
+      /* already gone */
+    }
+  }, 2000)
 }
 
 function runShell(command: string, cwd: string, timeoutS: number, signal: AbortSignal): Promise<{ code: number; output: string }> {
@@ -105,21 +123,7 @@ function runShell(command: string, cwd: string, timeoutS: number, signal: AbortS
     child.stdout.on('data', add)
     child.stderr.on('data', add)
 
-    const kill = () => {
-      try {
-        if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM')
-        else child.kill()
-      } catch {
-        /* already gone */
-      }
-      setTimeout(() => {
-        try {
-          if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
-        } catch {
-          /* already gone */
-        }
-      }, 2000)
-    }
+    const kill = () => killTree(child)
     let reason: string | null = null
     const timer = setTimeout(() => {
       reason = `Stopped after ${timeoutS}s (time limit).`
@@ -148,7 +152,7 @@ function runShell(command: string, cwd: string, timeoutS: number, signal: AbortS
 export const runCommand: Tool = {
   name: 'run_command',
   description:
-    'Run a terminal command (macOS/Linux: zsh/sh; Windows: PowerShell) in a folder and get its output. Use for things like listing, searching, git, scripts, builds. Prefer the file tools for simple file changes.',
+    'Run a terminal command (macOS/Linux: zsh/sh; Windows: PowerShell) in a folder and wait for its output: installs, scaffolding, builds, tests, git, scripts. Never use it for dev servers or watchers (they never finish): use start_server. Prefer the file tools for file changes.',
   permission: 'shell',
   parameters: {
     type: 'object',

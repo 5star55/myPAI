@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Conversation, ConversationMeta, StoredMessage, ToolStep, WebResult } from '@shared/ipc'
+import { CHAT_LIMITS, isImageDataUrl, type Conversation, type ConversationMeta, type StoredMessage, type ToolStep, type WebResult } from '@shared/ipc'
 import { dataDir } from '../paths'
 import { isObj, newId, str } from './jsonStore'
 
@@ -43,11 +43,12 @@ function cleanStep(raw: unknown): ToolStep | null {
     tool: str(raw.tool).slice(0, 60),
     target: str(raw.target).slice(0, 2000),
     status,
-    summary: str(raw.summary).slice(0, 500)
+    summary: str(raw.summary).slice(0, 2000)
   }
   if (typeof raw.output === 'string') step.output = raw.output.slice(0, MAX_STEP_OUTPUT)
   if (raw.auto === true) step.auto = true
   if (isObj(raw.data) && raw.data.kind === 'web') step.data = { kind: 'web', query: str(raw.data.query).slice(0, 300), results: cleanWeb(raw.data.results) }
+  if (isObj(raw.data) && raw.data.kind === 'preview' && typeof raw.data.url === 'string') step.data = { kind: 'preview', url: raw.data.url.slice(0, 2000) }
   return step.tool ? step : null
 }
 
@@ -62,8 +63,12 @@ export function cleanMessages(raw: unknown): StoredMessage[] {
       at: Number.isNaN(Date.parse(str(m.at))) ? new Date().toISOString() : str(m.at)
     }
     if (Array.isArray(m.steps)) {
-      const steps = m.steps.map(cleanStep).filter((s): s is ToolStep => !!s).slice(0, 50)
+      const steps = m.steps.map(cleanStep).filter((s): s is ToolStep => !!s).slice(0, 150)
       if (steps.length) msg.steps = steps
+    }
+    if (Array.isArray(m.images)) {
+      const images = m.images.filter(isImageDataUrl).slice(0, CHAT_LIMITS.maxImages)
+      if (images.length) msg.images = images
     }
     if (m.failed === 'stopped' || m.failed === 'error') msg.failed = m.failed
     out.push(msg)

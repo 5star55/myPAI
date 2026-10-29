@@ -82,6 +82,8 @@ export const webSearch: Tool = {
     return {
       action: 'Search the web',
       target: query,
+      // Only reads public pages; the "web" switch in Settings still turns it off.
+      autoApprove: true,
       run: async (): Promise<ToolOutput> => {
         const results = tavilyApiKey ? await tavilySearch(query) : MOCK_RESULTS
         return { text: forModel(query, results), data: { kind: 'web', query, results } }
