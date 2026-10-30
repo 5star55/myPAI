@@ -303,7 +303,16 @@ npm run dist        # → dist/pai-<version>.dmg (macOS) or dist/pai Setup <vers
 
 [`electron-builder.yml`](electron-builder.yml) ships **only** `out/`, `skills/`, `resources/`, `native/bin/` and `package.json` (plus production dependencies), and excludes every `.env` / `.env.*` file anywhere. Nothing from your `.env` (key, models, settings) ends up in the installer, so each user pastes their own key. To check a build: `npx @electron/asar list dist/mac-arm64/pai.app/Contents/Resources/app.asar | grep .env` prints nothing.
 
-The text helper for *Complete my text* is unpacked next to the app archive (`app.asar.unpacked`) so it can run. Builds are unsigned unless you set up code signing (macOS will ask users to confirm the first launch).
+The text helper for *Complete my text* is unpacked next to the app archive (`app.asar.unpacked`) so it can run. macOS builds are signed ad-hoc only (no Apple Developer ID yet), so macOS blocks the first launch of a downloaded copy.
+
+### Opening pai on macOS
+
+If macOS says **"pai" Not Opened – Apple could not verify "pai" is free of malware**, click **Done** (not Move to Trash), then either:
+
+- open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to *"pai" was blocked*, or
+- run `xattr -dr com.apple.quarantine /Applications/pai.app` in Terminal.
+
+You only have to do this once. Right-click → Open no longer skips the check on macOS 15 and later.
 
 ## Known limitations
 
@@ -314,7 +323,7 @@ The text helper for *Complete my text* is unpacked next to the app archive (`app
 - Voice input is English-first; the Whisper `base` model is a balance of speed and accuracy.
 - The preview window only opens local addresses (`localhost`).
 - Quiz answers aren't saved: reopening a chat starts its quiz over.
-- The installer isn't code-signed yet, so macOS asks users to confirm the first launch.
+- The installer isn't signed with an Apple Developer ID or notarized yet, so macOS blocks the first launch (see [Opening pai on macOS](#opening-pai-on-macos)).
 
 ## Roadmap
 

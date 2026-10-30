@@ -19,6 +19,10 @@ asarUnpack:
 mac:
   category: public.app-category.productivity
   target: dmg
+  # No Apple Developer ID yet: sign ad-hoc ("-") so the whole app is signed. Without it, a
+  # downloaded copy is reported as "damaged" on Apple Silicon instead of "unverified developer".
+  identity: "-"
+  hardenedRuntime: false
   extendInfo:
     NSMicrophoneUsageDescription: pai listens when you use the mic or hands-free voice. Speech is turned into text on this computer.
 win:
