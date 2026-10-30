@@ -41,6 +41,9 @@ jobs:
 
       - name: Build the installer
         run: npm run dist
+        env:
+          # Built into the app so web search works with no setup (see electron.vite.config).
+          PAI_BUILTIN_TAVILY_KEY: ${{ secrets.TAVILY_API_KEY }}
 
       - name: Attach to the release
         shell: bash

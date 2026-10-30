@@ -88,7 +88,7 @@ When running from source, model settings live in `.env` and are read only by [`s
 | `BIG_MODEL` | Tool calling and coding |
 | `SMALL_MAX_TOKENS` / `BIG_MAX_TOKENS` | Reply length limits (hosted default 4096 / 8192; Ollama 1024 / 1536). Replies cut off at the limit are continued automatically |
 | `MODEL_CONTEXT_TOKENS` | How much the model reads at once (hosted default 65536; Ollama 8192). Long chats are trimmed to fit, oldest messages first; the instructions always stay |
-| `TAVILY_API_KEY` | Optional: web search |
+| `TAVILY_API_KEY` | Optional: web search. Also built into installers made with `npm run dist` (see [Building installers](#building-installers)) |
 | `PAI_DATA_DIR` | Optional: store pai's data in another folder (e.g. for testing) |
 
 **Ollama (local, free):**
@@ -291,7 +291,7 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 - The folder allowlist resolves `~`, `..` and symlinks before checking. pai's own data folder, its code and `.env`, system folders and credential folders can never be touched.
 - Nothing is permanently deleted: deletes and overwrites go to the Trash.
 - Window titles stay in memory only, never on disk or in the log. pai never reads the clipboard.
-- API keys never reach the UI or terminal commands. From source they stay in `.env` (git-ignored); in the installed app the key pasted in Settings is stored encrypted in the user-data folder. `.env` is never packaged (see [Building installers](#building-installers)).
+- API keys never reach the UI or terminal commands. From source they stay in `.env` (git-ignored); in the installed app the key pasted in Settings is stored encrypted in the user-data folder. `.env` is never packaged; only the Tavily key is built in on purpose (see [Building installers](#building-installers)).
 - Your data (profile, memory, log, reminders) lives in your OS user-data folder, e.g. `~/Library/Application Support/pai` on macOS.
 - Reminders you set keep firing while the assistant is switched off, since they're your own notifications. Everything else stops.
 
@@ -301,7 +301,11 @@ Chats are stored as JSON files in `<data folder>/conversations/` (e.g. `~/Librar
 npm run dist        # → dist/pai-<version>.dmg (macOS) or dist/pai Setup <version>.exe (Windows)
 ```
 
-[`electron-builder.yml`](electron-builder.yml) ships **only** `out/`, `skills/`, `resources/`, `native/bin/` and `package.json` (plus production dependencies), and excludes every `.env` / `.env.*` file anywhere. Nothing from your `.env` (key, models, settings) ends up in the installer, so each user pastes their own key. To check a build: `npx @electron/asar list dist/mac-arm64/pai.app/Contents/Resources/app.asar | grep .env` prints nothing.
+[`electron-builder.yml`](electron-builder.yml) ships **only** `out/`, `skills/`, `resources/`, `native/bin/` and `package.json` (plus production dependencies), and excludes every `.env` / `.env.*` file anywhere. Nothing else from your `.env` (Nebius key, models, settings) ends up in the installer, so each user pastes their own Nebius key.
+
+**The one exception is web search.** So that it works with no setup, the build puts a Tavily key into the app's code: `PAI_BUILTIN_TAVILY_KEY` if set (the GitHub Windows build sets it from the `TAVILY_API_KEY` repo secret), otherwise `TAVILY_API_KEY` from `.env`. The build prints which key ending it used. Anyone with the installer can extract this key, so use a free-tier key and revoke it when you no longer need it. To build without one, empty `TAVILY_API_KEY` in `.env` first.
+
+To check a build: `npx @electron/asar list dist/mac-arm64/pai.app/Contents/Resources/app.asar | grep .env` prints nothing.
 
 The text helper for *Complete my text* is unpacked next to the app archive (`app.asar.unpacked`) so it can run. macOS builds are signed ad-hoc only (no Apple Developer ID yet), so macOS blocks the first launch of a downloaded copy.
 

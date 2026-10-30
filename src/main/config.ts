@@ -5,12 +5,17 @@
  * The packaged app never reads a .env (none is shipped): it uses Nemotron on Nebius
  * Token Factory, with the API key the user pastes in Settings → AI model.
  * A key pasted in Settings always wins over MODEL_API_KEY in .env.
+ * Web search uses TAVILY_API_KEY from .env, or else the Tavily key built in at build time.
  */
 import { join } from 'node:path'
 import { app } from 'electron'
 import dotenv from 'dotenv'
 import type { PublicConfig } from '@shared/ipc'
 import { maskKey, savedApiKey } from './store/apiKey'
+
+/** Set by electron.vite.config at build time ('' when none was given). Missing under tests. */
+declare const __BUILTIN_TAVILY_KEY__: string
+const builtinTavilyKey = typeof __BUILTIN_TAVILY_KEY__ === 'string' ? __BUILTIN_TAVILY_KEY__ : ''
 
 export type ModelMode = 'mock' | 'live'
 
@@ -95,7 +100,7 @@ function loadConfig(): FileConfig {
     visionModel: env.VISION_MODEL?.trim() ?? (packaged ? PACKAGED_DEFAULTS.visionModel : ''),
     bigMaxTokens: readPositiveInt(env.BIG_MAX_TOKENS, isLocal ? DEFAULTS.bigMaxTokens : HOSTED_DEFAULTS.bigMaxTokens, 'BIG_MAX_TOKENS', warnings),
     contextTokens: readPositiveInt(env.MODEL_CONTEXT_TOKENS, isLocal ? DEFAULTS.contextTokens : HOSTED_DEFAULTS.contextTokens, 'MODEL_CONTEXT_TOKENS', warnings),
-    tavilyApiKey: env.TAVILY_API_KEY?.trim() ?? '',
+    tavilyApiKey: env.TAVILY_API_KEY?.trim() || builtinTavilyKey,
     warnings
   }
 }

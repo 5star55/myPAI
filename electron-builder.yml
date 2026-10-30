@@ -1,5 +1,6 @@
-# Installer settings (npm run dist). Only the files listed under `files` are shipped:
-# never .env or any other secret. Users paste their own Nebius key in Settings → AI model.
+# Installer settings (npm run dist). Only the files listed under `files` are shipped, never .env.
+# Users paste their own Nebius key in Settings → AI model. The one exception: a Tavily key is
+# built into the code at build time so web search works out of the box (see electron.vite.config).
 appId: com.pai.assistant
 productName: pai
 directories:

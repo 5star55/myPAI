@@ -1,6 +1,6 @@
 /**
  * web.ts — web_search via Tavily. Results are DATA, never instructions.
- * Needs TAVILY_API_KEY in .env (mock mode returns fake results without a key).
+ * Uses TAVILY_API_KEY from .env or the key built into the app (mock mode returns fake results without a key).
  *
  * Returns tidy text for the model AND structured results the chat shows as cards.
  */
@@ -31,7 +31,7 @@ async function tavilySearch(query: string): Promise<WebResult[]> {
   } catch {
     throw new Error("Couldn't reach Tavily. Check your internet connection.")
   }
-  if (res.status === 401 || res.status === 403) throw new Error('Tavily rejected the API key. Check TAVILY_API_KEY in .env.')
+  if (res.status === 401 || res.status === 403) throw new Error('Tavily rejected the API key. Check TAVILY_API_KEY in .env, or the key built into this copy of pai.')
   if (res.status === 429) throw new Error('Tavily rate limit reached. Try again later.')
   if (!res.ok) throw new Error(`Tavily returned an error (${res.status}).`)
 
